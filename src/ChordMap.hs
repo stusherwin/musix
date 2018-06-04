@@ -20,7 +20,7 @@ chordMap keyboard =
   in  (ChordMap scales chords)
 
 instance Drawable ChordMap where
-  draw (ChordMap scales chords) (V2 xo yo) = do
+  draw (ChordMap scales chords) (V2 xo yo) size = do
     preservingMatrix $ do
         translate $ Vector3 xo yo (0 :: GLfloat)
         mapM_ (\(c, coords) ->

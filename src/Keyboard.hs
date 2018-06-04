@@ -74,10 +74,9 @@ blackCol = makeGColor 0.5 0.5 0.5
 whiteCol = makeGColor 1 1 1
 redCol = makeGColor 1 0 0
 blueCol = makeGColor 0 0 1
-keyboardScale = 3 --0.01
-
+  
 instance Drawable Keyboard where
-  draw keyboard@(Keyboard scale keyMap) origin = do
+  draw keyboard@(Keyboard scale keyMap) origin (V2 w h) = do
     mapM_ drawKey $ M.assocs keyData
     where
       keyData = M.fromList $ zip keys $ zip3 (M.elems keyMap) keyTypes allowed
@@ -97,6 +96,9 @@ instance Drawable Keyboard where
           (White RightKey, True, _) -> whiteFull
           (Black, _, _) -> black
         where
+          keyboardWidth = ((fromIntegral $ M.size keyMap) * 7.0 / 12.0) * (x whiteSize + gap)
+          keyboardHeight = y whiteSize
+          keyboardScale = V2 (w / keyboardWidth) (h / keyboardHeight)
           keyColor = case (playState, allowed, keyType) of
                        (Playing, False, _) -> redCol
                        (Playing, True, _) -> blueCol
@@ -104,20 +106,20 @@ instance Drawable Keyboard where
                        (_, _, Black) -> blackCol
           whiteLeft = do
             whiteBase
-            drawRect whiteOffset (V2 0 0) (V2 (x whiteSize - x blackInset) (y blackSize))
+            drawRect' whiteOffset (V2 0 0) (V2 (x whiteSize - x blackInset) (y blackSize))
           whiteMiddle = do
             whiteBase
-            drawRect whiteOffset (V2 (x blackInset) 0) (V2 (x whiteSize - x blackInset) (y blackSize))
+            drawRect' whiteOffset (V2 (x blackInset) 0) (V2 (x whiteSize - x blackInset) (y blackSize))
           whiteRight = do
             whiteBase
-            drawRect whiteOffset (V2 (x blackInset) 0) (V2 (x whiteSize) (y blackSize))
+            drawRect' whiteOffset (V2 (x blackInset) 0) (V2 (x whiteSize) (y blackSize))
           whiteFull = do
-            drawRect whiteOffset (V2 0 0) whiteSize
+            drawRect' whiteOffset (V2 0 0) whiteSize
           black = do
-            drawRect blackOffset (V2 0 0) blackSize
-          whiteBase = drawRect (whiteOffset |+| V2 0 (y blackSize)) (V2 0 0) (V2 (x whiteSize) (y blackInset))
+            drawRect' blackOffset (V2 0 0) blackSize
+          whiteBase = drawRect' (whiteOffset |+| V2 0 (y blackSize)) (V2 0 0) (V2 (x whiteSize) (y blackInset))
           blackInset = V2 ((x blackSize + gap) / 2) (y whiteSize - y blackSize)
           whiteOffset = V2 (noOfWhites key * (x whiteSize + gap)) 0
           blackOffset = whiteOffset |+| V2 (-(x blackInset)) (-gap)--(y blackInset + gap)
-          drawRect offset p1 p2 =
-            draw (GRect keyColor (p1 |*| keyboardScale) (p2 |*| keyboardScale)) (origin |+| (offset |*| keyboardScale))
+          drawRect' offset p1 p2 =
+            drawRect keyColor (origin |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)

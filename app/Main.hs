@@ -27,7 +27,7 @@ main = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
   
-  (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre (makeKeyboard 24 41) mainSF
+  (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre (makeKeyboard 0 83) mainSF
 
   midi <- setupMidi handleMidi
   setupUI handleUI
@@ -45,7 +45,7 @@ setupYampa exit sf = do
   rh <- reactInit init actuate sf
 
   let react' e = do
-        -- threadDelay 1000
+        threadDelay 1000
         t' <- getPOSIXTime
         t <- readIORef timeRef
         let dt = realToFrac (t' - t) -- Time difference in seconds
@@ -91,7 +91,7 @@ virtualMidi = proc uiAction -> do
   where
     keys = ['z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm',
             'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u']
-    toNote c = ((+) 24) <$> c `elemIndex` keys
+    toNote c = c `elemIndex` keys
     toEvent = maybe NoEvent Event
 
 pressKey :: SF (Event MidiEvent, Keyboard) Keyboard
@@ -104,6 +104,6 @@ pressKey = proc (event, keyboard) -> do
 render :: Keyboard -> IO ()
 render keyboard = do
   clearScreen
-  draw keyboard (V2 450 20)
-  draw (chordMap keyboard) (V2 100 400)
+  draw keyboard (V2 100 0) (V2 1720 150)
+  -- draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush

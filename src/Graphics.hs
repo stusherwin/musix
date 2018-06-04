@@ -8,6 +8,7 @@ module Graphics (
   (|+|),
   (|-|),
   (|*|),
+  (|**|),
   (|/|),
   x,
   y,
@@ -30,19 +31,16 @@ V2 x1 y1 |+| V2 x2 y2 = V2 (x1 + x2) (y1 + y2)
 V2 x1 y1 |-| V2 x2 y2 = V2 (x1 - x2) (y1 - y2)
 V2 x y |*| a = V2 (x * a) (y * a)
 V2 x y |/| a = V2 (x / a) (y / a)
+V2 x y |**| V2 a b = V2 (x * a) (y * b)
 x (V2 x _) = x
 y (V2 _ y) = y
 
 class Drawable a where
-  draw :: a -> V2 GLfloat -> IO ()
+  draw :: a -> V2 GLfloat -> V2 GLfloat -> IO ()
 
 data GPolygon = GPolygon GColor [V2 GLfloat]
-instance Drawable GPolygon where
-  draw (GPolygon col vertices) origin = drawPolygon col origin vertices
 
 data GRect = GRect GColor (V2 GLfloat) (V2 GLfloat)
-instance Drawable GRect where
-  draw (GRect col v0 v1) origin = drawRect col origin v0 v1
 
 drawCircle :: Double -> Double -> GColor -> V2 GLfloat -> IO ()
 drawCircle res r col (V2 x y) = do
