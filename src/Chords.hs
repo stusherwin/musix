@@ -1,4 +1,5 @@
 module Chords where
+
 import qualified Data.List as List
 import Data.Maybe
 import Control.Applicative
@@ -43,6 +44,10 @@ instance Eq Scale where
   (Scale n1 Diminished) == (Scale n2 Diminished) = fromNote n1 `mod` 3 == fromNote n2 `mod` 3
   _ == _ = False
 
+inScale :: Scale -> Note -> Bool
+inScale scale n = n `elem` (scaleNotes scale)
+
+scaleNotes :: Scale -> [Note]
 scaleNotes (Scale root scaleType) =
   (scanl (flip transposeBy) root) . scaleIntervals $ scaleType
   where

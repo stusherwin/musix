@@ -16,25 +16,25 @@ import Chords
 data PlayState = Playing
                | NotPlaying deriving (Show, Eq)
 
-data Keyboard = Keyboard (M.Map Int PlayState) deriving (Show, Eq)
+data Keyboard = Keyboard (Maybe Scale) (M.Map Int PlayState) deriving (Show, Eq)
 
 makeKeyboard :: Int -> Int -> Keyboard
-makeKeyboard start end = Keyboard $ M.fromList $ take (end - start + 1) . (drop start) . (zip [0..]) $ repeat NotPlaying
+makeKeyboard start end = Keyboard (Just $ Scale Ab Major) $ M.fromList $ take (end - start + 1) . (drop start) . (zip [0..]) $ repeat NotPlaying
 
 keyDown :: Int -> Keyboard -> Keyboard
-keyDown key (Keyboard keyMap) = Keyboard $ M.update (\_ -> Just Playing) key keyMap
+keyDown key (Keyboard scale keyMap) = Keyboard scale $ M.update (\_ -> Just Playing) key keyMap
 
 keyUp :: Int -> Keyboard -> Keyboard
-keyUp key (Keyboard keyMap) = Keyboard $ M.update (\_ -> Just NotPlaying) key keyMap
+keyUp key (Keyboard scale keyMap) = Keyboard scale $ M.update (\_ -> Just NotPlaying) key keyMap
 
 firstKey :: Keyboard -> Int
-firstKey (Keyboard keyMap) = fst $ M.findMin keyMap
+firstKey (Keyboard _ keyMap) = fst $ M.findMin keyMap
 
 lastKey :: Keyboard -> Int
-lastKey (Keyboard keyMap) = fst $ M.findMax keyMap
+lastKey (Keyboard _ keyMap) = fst $ M.findMax keyMap
 
 notes :: Keyboard -> [Note]
-notes (Keyboard keyMap) = map (toNote . fst) $ filter (\(k, p) -> playing p) (M.toList keyMap)
+notes (Keyboard _ keyMap) = map (toNote . fst) $ filter (\(k, p) -> playing p) (M.toList keyMap)
 
 playing Playing = True
 playing _ = False
@@ -73,16 +73,20 @@ gap = 2
 blackCol = makeGColor 0.5 0.5 0.5
 whiteCol = makeGColor 1 1 1
 redCol = makeGColor 1 0 0
+blueCol = makeGColor 0 0 1
 keyboardScale = 3 --0.01
 
 instance Drawable Keyboard where
-  draw keyboard@(Keyboard keyMap) origin = do
-    mapM_ drawKey $ M.keys keyMap
+  draw keyboard@(Keyboard scale keyMap) origin = do
+    mapM_ drawKey $ M.assocs keyData
     where
-      keyTypes = M.mapWithKey (\k _ -> keyboardLayout ! (k `mod` 12)) keyMap
-      noOfWhites key = fromIntegral $ M.size $ (M.filter isWhite) $ fst $ M.split key keyTypes
-      drawKey :: Int -> IO ()
-      drawKey key = do
+      keyData = M.fromList $ zip keys $ zip3 (M.elems keyMap) keyTypes allowed
+      keys = M.keys keyMap
+      keyTypes = map (\k -> keyboardLayout ! (k `mod` 12)) keys
+      allowed = maybe (repeat True) (\s -> map (inScale s . toNote) keys) scale
+      noOfWhites key = fromIntegral $ M.size $ (M.filter (\(_, kt, _) -> isWhite kt)) $ fst $ M.split key keyData
+      drawKey :: (Int, (PlayState, Key, Bool)) -> IO ()
+      drawKey (key, (playState, keyType, allowed)) = do
         case (keyType, (key == firstKey keyboard), (key == lastKey keyboard)) of
           (White LeftKey, _, False) -> whiteLeft
           (White LeftKey, _, True) -> whiteFull
@@ -93,12 +97,11 @@ instance Drawable Keyboard where
           (White RightKey, True, _) -> whiteFull
           (Black, _, _) -> black
         where
-          playState = keyMap ! key
-          keyType = keyTypes ! key
-          keyColor = case (playState, keyType) of
-                       (Playing, _) -> redCol
-                       (_, White _) -> whiteCol
-                       (_, Black) -> blackCol
+          keyColor = case (playState, allowed, keyType) of
+                       (Playing, False, _) -> redCol
+                       (Playing, True, _) -> blueCol
+                       (_, _, White _) -> whiteCol
+                       (_, _, Black) -> blackCol
           whiteLeft = do
             whiteBase
             drawRect whiteOffset (V2 0 0) (V2 (x whiteSize - x blackInset) (y blackSize))
