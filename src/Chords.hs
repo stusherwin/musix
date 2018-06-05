@@ -20,13 +20,19 @@ instance Show Note where
   show Bb = "Bb"
   show B = "B"
 
-fromNote = fromJust . (`List.elemIndex` [C ..])
-toNote = ([C ..] !!) . (`mod` 12)
+notes = [C ..]
+fromNote = fromJust . (`List.elemIndex` notes)
+toNote = (notes !!) . (`mod` (length notes))
 transposeBy interval = toNote . (+ interval) . fromNote
-intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` 12
+intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
 data ScaleType = Major | Minor | Diminished | WholeTone deriving (Enum)
+
+scaleTypes = [Major ..]
+
+nextIn :: Enum a => [a] -> a -> a
+nextIn xs x = toEnum $ (fromEnum x + 1) `mod` (length xs)
 
 data Scale = Scale Note ScaleType
 

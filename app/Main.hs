@@ -73,8 +73,11 @@ mainSF = proc (event, state) -> do
   vmidi <- virtualMidi -< uiAction
   let midi = rMerge vmidi (getMidi event)
   keyboard' <- pressKey -< (midi, keyboard state)
+  scale' <- changeScale -< (midi, scale state)
 
-  let state' = state { keyboard = keyboard' }
+  let state' = state { keyboard = keyboard'
+                     , scale = scale'
+                     }
 
   let io = case (uiAction, keyboard' /= keyboard state) of
             (Event (UIReshape size), _) -> Event (reshape size >> render state >> return False)
@@ -112,6 +115,14 @@ pressKey = proc (event, keyboard) -> do
                Event (NoteOff n) -> keyUp n keyboard
                _ -> keyboard
   
+changeScale :: SF (Event MidiEvent, Maybe Scale) (Maybe Scale)
+changeScale = proc (event, maybeScale) -> do
+  returnA -< case (event, maybeScale) of
+               (Event (NoteOn 0), Nothing) -> Just $ Scale C Major
+               (Event (NoteOn 0), Just (Scale n st)) -> Just $ Scale (nextIn notes n) st
+               (Event (NoteOn 1), Just (Scale n st)) -> Just $ Scale n (nextIn scaleTypes st)
+               (_, scale) -> scale
+
 render :: State -> IO ()
 render state = do
   clearScreen

@@ -5,7 +5,7 @@ module Keyboard (
   keyUp,
   firstKey,
   lastKey,
-  notes,
+  notesPlaying,
   drawKeyboard
 ) where
 
@@ -37,8 +37,8 @@ firstKey (Keyboard keyMap) = fst $ M.findMin keyMap
 lastKey :: Keyboard -> Int
 lastKey (Keyboard keyMap) = fst $ M.findMax keyMap
 
-notes :: Keyboard -> [Note]
-notes (Keyboard keyMap) = map (toNote . fst) $ filter (\(k, p) -> playing p) (M.toList keyMap)
+notesPlaying :: Keyboard -> [Note]
+notesPlaying (Keyboard keyMap) = map (toNote . fst) $ filter (\(k, p) -> playing p) (M.toList keyMap)
 
 playing Playing = True
 playing _ = False
@@ -69,7 +69,7 @@ blackKeySize = V2 16 76
 whiteKeySize = V2 26 116
 gap = 2
 
-black = makeGColor 0.2 0.2 0.2
+black = makeGColor 0.1 0.1 0.1
 white = makeGColor 1 1 1
 red = makeGColor 1 0.2 0.2
 green = makeGColor 0 1 0

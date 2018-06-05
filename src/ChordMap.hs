@@ -12,10 +12,9 @@ data ChordMap = ChordMap [Note] [(Note, [(Integer, Integer)])] deriving (Show, E
 
 chordMap :: Keyboard -> ChordMap
 chordMap keyboard = 
-  let notesPlaying = notes keyboard
-      scales = map (\(Scale r t) -> r) $ filter (\(Scale r t) -> case t of
+  let scales = map (\(Scale r t) -> r) $ filter (\(Scale r t) -> case t of
                                                                    Major -> True
-                                                                   _ -> False) $ scalesFor notesPlaying
+                                                                   _ -> False) $ scalesFor $ notesPlaying keyboard
       chords = keyByValue . indexify2 $ map (scaleCycle 1 (-3)) (scaleCycle 1 (-5) C)
   in  (ChordMap scales chords)
 
