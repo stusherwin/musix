@@ -2,7 +2,7 @@
 import Control.Arrow ( returnA )
 import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
-import Data.List ( elemIndex )
+import Data.List ( elemIndex, intercalate )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre )
@@ -22,9 +22,18 @@ type ReactState = (ReactHandle (Event UIAction, Event MidiEvent) (Event (IO Bool
 data EventType = UI UIAction
                | Midi MidiEvent deriving (Show)
 
+data ScaleSelect = ScaleSelect { root :: Maybe Note
+                               , scaleType :: Maybe ScaleType
+                               , waitingForInput :: Bool
+                               , inputNotes :: [Note]
+                               , availScaleTypes :: [ScaleType]
+                               }
 data State = State { keyboard :: Keyboard
-                   , scale :: Maybe Scale 
+                   , scaleSelect :: ScaleSelect
                    }
+
+currentScale (State { scaleSelect = ScaleSelect { root = Just r, scaleType = Just st } }) = Just $ Scale r st
+currentScale _ = Nothing
 
 main :: IO ()
 main = do
@@ -33,7 +42,12 @@ main = do
   fullScreen
  
   let state = State { keyboard = makeKeyboard 0 83
-                    , scale = Nothing --Just $ Scale Ab Major
+                    , scaleSelect = ScaleSelect { root = Nothing
+                                                , scaleType = Nothing
+                                                , waitingForInput = False
+                                                , inputNotes = []
+                                                , availScaleTypes = []
+                                                } 
                     }
 
   (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre state mainSF
@@ -73,10 +87,10 @@ mainSF = proc (event, state) -> do
   vmidi <- virtualMidi -< uiAction
   let midi = rMerge vmidi (getMidi event)
   keyboard' <- pressKey -< (midi, keyboard state)
-  scale' <- changeScale -< (midi, scale state)
+  scaleSelect' <- changeScale -< (midi, scaleSelect state)
 
   let state' = state { keyboard = keyboard'
-                     , scale = scale'
+                     , scaleSelect = scaleSelect'
                      }
 
   let io = case (uiAction, keyboard' /= keyboard state) of
@@ -115,18 +129,70 @@ pressKey = proc (event, keyboard) -> do
                Event (NoteOff n) -> keyUp n keyboard
                _ -> keyboard
   
-changeScale :: SF (Event MidiEvent, Maybe Scale) (Maybe Scale)
-changeScale = proc (event, maybeScale) -> do
-  returnA -< case (event, maybeScale) of
-               (Event (NoteOn 0), Nothing) -> Just $ Scale C Major
-               (Event (NoteOn 0), Just (Scale n st)) -> Just $ Scale (nextIn notes n) st
-               (Event (NoteOn 1), Just (Scale n st)) -> Just $ Scale n (nextIn scaleTypes st)
-               (_, scale) -> scale
+changeScale :: SF (Event MidiEvent, ScaleSelect) ScaleSelect
+changeScale = proc (event, ss) -> do
+  returnA -< case (event, ss) of
+               (Event (NoteOn 0), ScaleSelect { waitingForInput = False }) ->
+                 ss { waitingForInput = True
+                    , root = Nothing
+                    , scaleType = Nothing
+                    , inputNotes = []
+                    , availScaleTypes = []
+                    }
+
+               (Event (NoteOn 0), ScaleSelect { waitingForInput = True }) ->
+                 ss { waitingForInput = False
+                    }
+
+               (Event (NoteOn n), ScaleSelect { root = Nothing
+                                              , waitingForInput = True
+                                              , inputNotes = ns }) ->
+                 let r = toNote n
+                     ns' = r : ns
+                     sts' = scaleTypesFor r $ ns'
+                 in  ss { root = Just $ r
+                        , inputNotes = ns'
+                        , availScaleTypes = sts'
+                        }
+
+               (Event (NoteOn n), ScaleSelect { root = Just r
+                                              , scaleType = Nothing
+                                              , waitingForInput = True
+                                              , inputNotes = ns
+                                              , availScaleTypes = a:b:sts }) ->
+                 let ns' = toNote n : ns
+                     sts' = scaleTypesFor r $ ns'
+                 in  case sts' of 
+                       [] -> ss { inputNotes = ns' 
+                                , availScaleTypes = sts'
+                                , waitingForInput = False -- remove
+                                , root = Nothing          -- remove
+                                , scaleType = Nothing     -- remove
+                                }
+                       [st] -> ss { inputNotes = ns' 
+                                  , availScaleTypes = sts'
+                                  , waitingForInput = False
+                                  , scaleType = Just st
+                                  }
+                       _ -> ss { inputNotes = ns' 
+                               , availScaleTypes = sts'
+                               }                 
+
+               (_, _) -> ss
 
 render :: State -> IO ()
 render state = do
   clearScreen
-  drawKeyboard (keyboard state) (scale state) (V2 10 50) (V2 1900 180)
-  drawText (makeGColor 1 1 1) (V2 100 400) $ maybe "No scale selected" show (scale state)
+  drawKeyboard (keyboard state) (currentScale state) (V2 10 50) (V2 1900 180)
+  drawScaleSelect (scaleSelect state)
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
+
+drawScaleSelect :: ScaleSelect -> IO ()
+drawScaleSelect (ScaleSelect { root = r, scaleType = st, waitingForInput = w, availScaleTypes = sts }) = do
+  drawText (makeGColor 1 1 1) (V2 100 400) (text r st w)
+  where
+  text (Just r) (Just st) _ = show (Scale r st)
+  text Nothing _ True = "Waiting for root..."
+  text (Just r) Nothing True = (show r) ++ " " ++ (intercalate "/" $ map show sts)
+  text _ _ _ = "No scale selected"

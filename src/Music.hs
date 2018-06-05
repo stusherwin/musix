@@ -36,13 +36,15 @@ nextIn xs x = toEnum $ (fromEnum x + 1) `mod` (length xs)
 
 data Scale = Scale Note ScaleType
 
+instance Show ScaleType where
+  show Major = "major"
+  show Minor = "minor"
+  show Diminished = "diminished"
+  show WholeTone = "wholetone"
+  show Altered = "altered"
+
 instance Show Scale where
-  show (Scale n t) = (show n) ++ " " ++ (showType t) where
-    showType Major = "major"
-    showType Minor = "minor"
-    showType Diminished = "diminished"
-    showType WholeTone = "wholetone"
-    showType Altered = "altered"
+  show (Scale n t) = (show n) ++ " " ++ (show t)
 
 instance Eq Scale where
   (Scale n1 Major) == (Scale n2 Major) = n1 == n2
@@ -114,6 +116,8 @@ scalesFor [] = []
 scalesFor notes =
   List.nub $ [ s | s <- scales, notes `containedIn` (scaleNotes s) ] where
     scales = [Scale r t | r <- [C ..], t <- [Major ..]]
+
+scaleTypesFor root = map (\(Scale _ st) -> st) . filter (\s@(Scale r st) -> s == (Scale root st)) . scalesFor
 
 chordsFor [] = []
 chordsFor notes =
