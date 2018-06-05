@@ -27,7 +27,7 @@ transposeBy interval = toNote . (+ interval) . fromNote
 intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
-data ScaleType = Major | Minor | Diminished | WholeTone deriving (Enum)
+data ScaleType = Major | Minor | Diminished | WholeTone | Altered deriving (Enum)
 
 scaleTypes = [Major ..]
 
@@ -42,12 +42,14 @@ instance Show Scale where
     showType Minor = "minor"
     showType Diminished = "diminished"
     showType WholeTone = "wholetone"
+    showType Altered = "altered"
 
 instance Eq Scale where
   (Scale n1 Major) == (Scale n2 Major) = n1 == n2
   (Scale n1 Minor) == (Scale n2 Minor) = n1 == n2
   (Scale n1 WholeTone) == (Scale n2 WholeTone) = fromNote n1 `mod` 2 == fromNote n2 `mod` 2
   (Scale n1 Diminished) == (Scale n2 Diminished) = fromNote n1 `mod` 3 == fromNote n2 `mod` 3
+  (Scale n1 Altered) == (Scale n2 Altered) = n1 == n2
   _ == _ = False
 
 inScale :: Scale -> Note -> Bool
@@ -61,6 +63,7 @@ scaleNotes (Scale root scaleType) =
     scaleIntervals Minor = [2, 1, 2, 2, 2, 2]
     scaleIntervals Diminished = [1, 2, 1, 2, 1, 2, 1]
     scaleIntervals WholeTone = [2, 2, 2, 2, 2]
+    scaleIntervals Altered = [1, 2, 1, 2, 2, 2]
 
 data ChordType = Maj | Maj6 | Maj7 | Dom7 | Dom9 | Dom13 | Dom7b5
                | Min | Min6 | Min7 | Min9 | MinMaj7 | Min7b5
