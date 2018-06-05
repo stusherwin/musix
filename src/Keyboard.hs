@@ -44,32 +44,35 @@ data WhiteKeyType = L
                   | M
                   | R deriving (Show)
 
-data Key = W WhiteKeyType
-         | B deriving (Show)
+data Key = Wh WhiteKeyType
+         | Bl deriving (Show)
 
 keyboardLayout :: M.Map Int Keyboard.Key
-keyboardLayout = M.fromList $ zip [0..] [ W L
-                                        , B
-                                        , W M
-                                        , B
-                                        , W R
-                                        , W L
-                                        , B
-                                        , W M
-                                        , B
-                                        , W M
-                                        , B
-                                        , W R
+keyboardLayout = M.fromList $ zip [0..] [ Wh L
+                                        , Bl
+                                        , Wh M
+                                        , Bl
+                                        , Wh R
+                                        , Wh L
+                                        , Bl
+                                        , Wh M
+                                        , Bl
+                                        , Wh M
+                                        , Bl
+                                        , Wh R
                                         ]
 
 blackKeySize = V2 16 76
 whiteKeySize = V2 26 116
 gap = 2
 
-black = makeGColor 0.5 0.5 0.5
+black = makeGColor 0.2 0.2 0.2
 white = makeGColor 1 1 1
-red = makeGColor 1 0 0
-blue = makeGColor 0 0 1
+red = makeGColor 1 0.2 0.2
+green = makeGColor 0 1 0
+brightBlue = makeGColor 0.2 0.4 1
+blueDark = makeGColor 0.7 0.8 1
+blueDarker = makeGColor 0.2 0.25 0.5
   
 instance Drawable Keyboard where
   draw keyboard@(Keyboard scale keyMap) origin (V2 w h) = do
@@ -83,23 +86,26 @@ instance Drawable Keyboard where
       drawKey :: (Int, PlayState, Key, Bool) -> IO ()
       drawKey (key, playState, keyType, allowed) = do
         case (keyType, (key == firstKey keyboard), (key == lastKey keyboard)) of
-          (W L, _, False) -> drawWhiteKeyLeft
-          (W L, _, True) -> drawWhiteKeyFull
-          (W M, False, False) -> drawWhiteKeyMiddle
-          (W M, True, _) -> drawWhiteKeyLeft
-          (W M, _, True) -> drawWhiteKeyRight
-          (W R, False, _) -> drawWhiteKeyRight
-          (W R, True, _) -> drawWhiteKeyFull
-          (B, _, _) -> drawBlackKey
+          (Wh L, _, False) -> drawWhiteKeyLeft
+          (Wh L, _, True) -> drawWhiteKeyFull
+          (Wh M, False, False) -> drawWhiteKeyMiddle
+          (Wh M, True, _) -> drawWhiteKeyLeft
+          (Wh M, _, True) -> drawWhiteKeyRight
+          (Wh R, False, _) -> drawWhiteKeyRight
+          (Wh R, True, _) -> drawWhiteKeyFull
+          (Bl, _, _) -> drawBlackKey
         where
           keyboardWidth = ((fromIntegral $ M.size keyMap) * 7.0 / 12.0) * (x whiteKeySize + gap)
           keyboardHeight = y whiteKeySize
           keyboardScale = V2 (w / keyboardWidth) (h / keyboardHeight)
           keyColor = case (playState, allowed, keyType) of
-                       (Playing, False, _) -> red
-                       (Playing, True, _) -> blue
-                       (_, _, W _) -> white
-                       (_, _, B) -> black
+                       (NotPlaying, True, Wh _) -> blueDark
+                       (NotPlaying, True, _) -> blueDarker
+                       (Playing, True, Wh _) -> brightBlue
+                       (Playing, True, _) -> brightBlue
+                       (Playing, _, _) -> red
+                       (_, _, Wh _) -> white
+                       (_, _, _) -> black
           drawWhiteKeyLeft = do
             drawWhiteBase
             drawRect' whiteKeyOffset (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))

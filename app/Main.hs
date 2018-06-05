@@ -26,6 +26,7 @@ main :: IO ()
 main = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
+  fullScreen   
   
   (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre (makeKeyboard 0 83) mainSF
 
@@ -104,6 +105,7 @@ pressKey = proc (event, keyboard) -> do
 render :: Keyboard -> IO ()
 render keyboard = do
   clearScreen
-  draw keyboard (V2 100 0) (V2 1720 150)
-  -- draw (chordMap keyboard) (V2 100 400) (V2 0 0)
+  draw keyboard (V2 10 50) (V2 1900 180)
+  drawText (makeGColor 1 1 1) (V2 100 400) "Ab major"
+  --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush

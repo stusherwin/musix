@@ -4,6 +4,7 @@ module Graphics (
   drawPoint,
   drawPolygon,
   drawRect,
+  drawText,
   V2(V2),
   (|+|),
   (|-|),
@@ -67,6 +68,22 @@ drawPolygon col (V2 xo yo) vs = do
 drawRect :: GColor -> V2 GLfloat -> V2 GLfloat -> V2 GLfloat -> IO ()
 drawRect col orig (V2 x0 y0) (V2 x1 y1) = do
   drawPolygon col orig [ V2 x0 y0, V2 x0 y1, V2 x1 y1, V2 x1 y0 ]
+
+drawText :: GColor -> V2 GLfloat -> String -> IO ()
+drawText col (V2 xo yo) text = do
+  preservingMatrix $ do
+    rasterPos (Vertex2 xo (yo:: GLfloat))
+    renderString Helvetica18 text
+
+drawText' :: GColor -> V2 GLfloat -> String -> IO ()
+drawText' col (V2 xo yo) text = do
+  preservingMatrix $ do
+    color $ getColor3 col
+    translate $ Vector3 xo yo (0 :: GLfloat)
+    rotate 180 $ Vector3 1 0 (0 ::  GLfloat)
+    translate $ Vector3 0 (-100.0) (0 :: GLfloat)
+    scale 0.25 0.25 (1::GLfloat)
+    renderString Roman text
 
 clearScreen :: IO ()
 clearScreen = clear [ ColorBuffer ]
