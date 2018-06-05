@@ -25,7 +25,7 @@ data EventType = UI UIAction
 data ScaleSelect = ScaleSelect { root :: Maybe Note
                                , scaleType :: Maybe ScaleType
                                , waitingForInput :: Bool
-                               , inputNotes :: [Note]
+                               , inputNotes :: [Int]
                                , availScaleTypes :: [ScaleType]
                                }
 data State = State { keyboard :: Keyboard
@@ -148,8 +148,8 @@ changeScale = proc (event, ss) -> do
                                               , waitingForInput = True
                                               , inputNotes = ns }) ->
                  let r = toNote n
-                     ns' = r : ns
-                     sts' = scaleTypesFor r $ ns'
+                     ns' = n : ns
+                     sts' = scaleTypesFor r $ map toNote ns'
                  in  ss { root = Just $ r
                         , inputNotes = ns'
                         , availScaleTypes = sts'
@@ -160,10 +160,10 @@ changeScale = proc (event, ss) -> do
                                               , waitingForInput = True
                                               , inputNotes = ns
                                               , availScaleTypes = a:b:sts }) ->
-                 let ns' = toNote n : ns
-                     sts' = scaleTypesFor r $ ns'
+                 let ns' = n : ns
+                     sts' = scaleTypesFor r $ map toNote ns'
                  in  case sts' of 
-                       [] -> ss { inputNotes = ns' 
+                       [] -> ss { inputNotes = ns'
                                 , availScaleTypes = sts'
                                 , waitingForInput = False -- remove
                                 , root = Nothing          -- remove
@@ -174,9 +174,15 @@ changeScale = proc (event, ss) -> do
                                   , waitingForInput = False
                                   , scaleType = Just st
                                   }
-                       _ -> ss { inputNotes = ns' 
+                       _ -> ss { inputNotes = ns'
                                , availScaleTypes = sts'
                                }                 
+
+              --  (Event (NoteOff n), ScaleSelect { root = Just r
+              --                                  , scaleType = Nothing
+              --                                  , waitingForInput = True
+              --                                  , inputNotes = ns
+              --                                  , availScaleTypes = a:b:sts }) ->
 
                (_, _) -> ss
 
