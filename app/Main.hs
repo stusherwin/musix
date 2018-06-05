@@ -12,7 +12,7 @@ import Control.Concurrent ( threadDelay )
 
 import Graphics
 import Keyboard
-import Chords
+import Music
 import Midi
 import ChordMap
 import UI

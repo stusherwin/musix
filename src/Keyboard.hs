@@ -14,7 +14,7 @@ import Data.List (zip4)
 import qualified Data.Map.Lazy as M
 import Data.Map.Lazy ((!))
 
-import Chords
+import Music
 import Graphics
 
 data PlayState = Playing

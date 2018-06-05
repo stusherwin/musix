@@ -5,7 +5,7 @@ module ChordMap (
 
 import Graphics.UI.GLUT 
 import Graphics
-import Chords
+import Music
 import Keyboard
 
 data ChordMap = ChordMap [Note] [(Note, [(Integer, Integer)])] deriving (Show, Eq)
