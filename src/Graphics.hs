@@ -1,5 +1,4 @@
 module Graphics (
-  Drawable,
   drawCircle,
   drawPoint,
   drawPolygon,
@@ -13,7 +12,6 @@ module Graphics (
   (|/|),
   x,
   y,
-  draw,
   GPolygon(GPolygon),
   GRect(GRect),
   GColor,
@@ -35,9 +33,6 @@ V2 x y |/| a = V2 (x / a) (y / a)
 V2 x y |**| V2 a b = V2 (x * a) (y * b)
 x (V2 x _) = x
 y (V2 _ y) = y
-
-class Drawable a where
-  draw :: a -> V2 GLfloat -> V2 GLfloat -> IO ()
 
 data GPolygon = GPolygon GColor [V2 GLfloat]
 
@@ -72,6 +67,7 @@ drawRect col orig (V2 x0 y0) (V2 x1 y1) = do
 drawText :: GColor -> V2 GLfloat -> String -> IO ()
 drawText col (V2 xo yo) text = do
   preservingMatrix $ do
+    color $ getColor3 col
     rasterPos (Vertex2 xo (yo:: GLfloat))
     renderString Helvetica18 text
 

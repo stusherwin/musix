@@ -6,7 +6,7 @@ import Data.List ( elemIndex )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre )
-import Graphics.UI.GLUT 
+import Graphics.UI.GLUT  ( getArgsAndInitialize, createWindow, fullScreen, flush, mainLoop, leaveMainLoop )
 import System.Exit ( exitWith, ExitCode(ExitSuccess) )
 import Control.Concurrent ( threadDelay )
 
@@ -22,13 +22,21 @@ type ReactState = (ReactHandle (Event UIAction, Event MidiEvent) (Event (IO Bool
 data EventType = UI UIAction
                | Midi MidiEvent deriving (Show)
 
+data State = State { keyboard :: Keyboard
+                   , scale :: Maybe Scale 
+                   }
+
 main :: IO ()
 main = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
-  fullScreen   
-  
-  (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre (makeKeyboard 0 83) mainSF
+  fullScreen
+ 
+  let state = State { keyboard = makeKeyboard 0 83
+                    , scale = Nothing --Just $ Scale Ab Major
+                    }
+
+  (handleUI, handleMidi) <- setupYampa leaveMainLoop $ loopPre state mainSF
 
   midi <- setupMidi handleMidi
   setupUI handleUI
@@ -59,21 +67,23 @@ setupYampa exit sf = do
   return ( \uiAction -> react' $ Event (UI uiAction),
            \midiEvent -> react' $ Event (Midi midiEvent ) )
 
-mainSF :: SF (Event EventType, Keyboard) (Event (IO Bool), Keyboard)
-mainSF = proc (event, keyboard) -> do
+mainSF :: SF (Event EventType, State) (Event (IO Bool), State)
+mainSF = proc (event, state) -> do
   let uiAction = getUIAction event
   vmidi <- virtualMidi -< uiAction
   let midi = rMerge vmidi (getMidi event)
-  keyboard' <- pressKey -< (midi, keyboard)
+  keyboard' <- pressKey -< (midi, keyboard state)
 
-  let io = case (uiAction, keyboard' /= keyboard) of
-            (Event (UIReshape size), _) -> Event (reshape size >> render keyboard >> return False)
-            (Event (UIKeyDown '\27'), _) -> Event (render keyboard >> return True)
-            (Event UIRefresh, _) -> Event (render keyboard >> return False)
-            (_, True) -> Event (render keyboard >> return False)
+  let state' = state { keyboard = keyboard' }
+
+  let io = case (uiAction, keyboard' /= keyboard state) of
+            (Event (UIReshape size), _) -> Event (reshape size >> render state >> return False)
+            (Event (UIKeyDown '\27'), _) -> Event (render state >> return True)
+            (Event UIRefresh, _) -> Event (render state >> return False)
+            (_, True) -> Event (render state >> return False)
             _ -> NoEvent
 
-  returnA -< (io, keyboard')
+  returnA -< (io, state')
 
 getUIAction :: Event EventType -> Event UIAction
 getUIAction (Event (UI uiAction)) = Event uiAction
@@ -102,10 +112,10 @@ pressKey = proc (event, keyboard) -> do
                Event (NoteOff n) -> keyUp n keyboard
                _ -> keyboard
   
-render :: Keyboard -> IO ()
-render keyboard = do
+render :: State -> IO ()
+render state = do
   clearScreen
-  draw keyboard (V2 10 50) (V2 1900 180)
-  drawText (makeGColor 1 1 1) (V2 100 400) "Ab major"
+  drawKeyboard (keyboard state) (scale state) (V2 10 50) (V2 1900 180)
+  drawText (makeGColor 1 1 1) (V2 100 400) $ maybe "No scale selected" show (scale state)
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
