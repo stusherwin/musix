@@ -2,7 +2,7 @@
 import Control.Arrow ( returnA )
 import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
-import Data.List ( elemIndex, intercalate )
+import Data.List ( elemIndex, intercalate, find, delete )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre )
@@ -142,9 +142,12 @@ changeScale = proc (event, ss) -> do
 
                (Event (NoteOn 0), ScaleSelect { waitingForInput = True }) ->
                  ss { waitingForInput = False
+                    , root = Nothing
+                    , scaleType = Nothing
                     }
 
                (Event (NoteOn n), ScaleSelect { root = Nothing
+                                              , scaleType = Nothing
                                               , waitingForInput = True
                                               , inputNotes = ns }) ->
                  let r = toNote n
@@ -158,31 +161,32 @@ changeScale = proc (event, ss) -> do
                (Event (NoteOn n), ScaleSelect { root = Just r
                                               , scaleType = Nothing
                                               , waitingForInput = True
-                                              , inputNotes = ns
-                                              , availScaleTypes = a:b:sts }) ->
-                 let ns' = n : ns
+                                              , inputNotes = ns }) ->
+                 let ns' = if n `elem` ns then ns else n : ns
                      sts' = scaleTypesFor r $ map toNote ns'
                  in  case sts' of 
-                       [] -> ss { inputNotes = ns'
-                                , availScaleTypes = sts'
-                                , waitingForInput = False -- remove
-                                , root = Nothing          -- remove
-                                , scaleType = Nothing     -- remove
-                                }
-                       [st] -> ss { inputNotes = ns' 
-                                  , availScaleTypes = sts'
-                                  , waitingForInput = False
+                       [st] -> ss { waitingForInput = False
                                   , scaleType = Just st
                                   }
                        _ -> ss { inputNotes = ns'
                                , availScaleTypes = sts'
                                }                 
 
-              --  (Event (NoteOff n), ScaleSelect { root = Just r
-              --                                  , scaleType = Nothing
-              --                                  , waitingForInput = True
-              --                                  , inputNotes = ns
-              --                                  , availScaleTypes = a:b:sts }) ->
+               (Event (NoteOff n), ScaleSelect { root = Just r
+                                               , scaleType = Nothing
+                                               , waitingForInput = True
+                                               , inputNotes = ns }) ->
+                 let ns' = delete n ns
+                     sts' = scaleTypesFor r $ map toNote ns'
+                     playingRoot = any (\n -> toNote n == r) ns'
+                 in  case playingRoot of
+                       True -> ss { inputNotes = ns'
+                                  , availScaleTypes = sts'
+                                  }
+                       _ -> ss { root = Nothing
+                               , inputNotes = ns'
+                               , availScaleTypes = sts'
+                               }
 
                (_, _) -> ss
 
@@ -195,10 +199,10 @@ render state = do
   flush
 
 drawScaleSelect :: ScaleSelect -> IO ()
-drawScaleSelect (ScaleSelect { root = r, scaleType = st, waitingForInput = w, availScaleTypes = sts }) = do
-  drawText (makeGColor 1 1 1) (V2 100 400) (text r st w)
+drawScaleSelect (ScaleSelect { root = r, scaleType = st, waitingForInput = w, availScaleTypes = sts, inputNotes = ns }) = do
+  drawText (makeGColor 1 1 1) (V2 100 400) $ "Scale: " ++ (text r st w)
   where
   text (Just r) (Just st) _ = show (Scale r st)
-  text Nothing _ True = "Waiting for root..."
-  text (Just r) Nothing True = (show r) ++ " " ++ (intercalate "/" $ map show sts)
-  text _ _ _ = "No scale selected"
+  text Nothing _ True = "waiting for root..."
+  text (Just r) Nothing True = (show r) ++ " " ++ (intercalate " / " $ map show sts) ++ " ?"
+  text _ _ _ = "none"
