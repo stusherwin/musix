@@ -12,11 +12,12 @@ import qualified System.MIDI as M ( MidiEvent(..), MidiMessage'(..) )
 data MidiEvent = NoteOn Int
                | NoteOff Int deriving (Show)
 
-newtype Midi = Midi { getConn :: Maybe Connection }
+newtype Midi = Midi { getConn :: Maybe Connection } 
 
 makeHandler :: (MidiEvent -> IO ()) -> (M.MidiEvent -> IO ())
 makeHandler handler (M.MidiEvent _ (MidiMessage _ (M.NoteOn n _))) = handler (NoteOn n)
 makeHandler handler (M.MidiEvent _ (MidiMessage _ (M.NoteOff n _))) = handler (NoteOff n)
+makeHandler _ _ = return ()
 
 setupMidi :: (MidiEvent -> IO ()) -> IO Midi
 setupMidi handler = do

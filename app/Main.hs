@@ -20,13 +20,14 @@ import UI
 type ReactState = (ReactHandle (Event UIAction, Event MidiEvent) (Event (IO Bool)), IORef POSIXTime)
 
 data EventType = UI UIAction
-               | Midi MidiEvent deriving (Show)
+               | Midi MidiEvent deriving (Show) 
 
 data ScaleSelect = ScaleSelect { root :: Maybe Note
                                , scaleType :: Maybe ScaleType
                                , waitingForInput :: Bool
                                , inputNotes :: [Int]
                                , availScaleTypes :: [ScaleType]
+                               , actionKey :: Int
                                }
 data State = State { keyboard :: Keyboard
                    , scaleSelect :: ScaleSelect
@@ -41,12 +42,14 @@ main = do
   _window <- createWindow "Musix"
   fullScreen
  
-  let state = State { keyboard = makeKeyboard 0 83
+  let keyboard = makeKeyboard 21 108
+      state = State { keyboard = keyboard
                     , scaleSelect = ScaleSelect { root = Nothing
                                                 , scaleType = Nothing
                                                 , waitingForInput = False
                                                 , inputNotes = []
                                                 , availScaleTypes = []
+                                                , actionKey = firstKey keyboard
                                                 } 
                     }
 
@@ -132,7 +135,7 @@ pressKey = proc (event, keyboard) -> do
 changeScale :: SF (Event MidiEvent, ScaleSelect) ScaleSelect
 changeScale = proc (event, ss) -> do
   returnA -< case (event, ss) of
-               (Event (NoteOn 0), ScaleSelect { waitingForInput = False }) ->
+               (Event (NoteOn n), ScaleSelect { waitingForInput = False }) | n == actionKey ss ->
                  ss { waitingForInput = True
                     , root = Nothing
                     , scaleType = Nothing
@@ -140,7 +143,7 @@ changeScale = proc (event, ss) -> do
                     , availScaleTypes = []
                     }
 
-               (Event (NoteOn 0), ScaleSelect { waitingForInput = True }) ->
+               (Event (NoteOn n), ScaleSelect { waitingForInput = True }) | n == actionKey ss ->
                  ss { waitingForInput = False
                     , root = Nothing
                     , scaleType = Nothing
@@ -194,15 +197,17 @@ render :: State -> IO ()
 render state = do
   clearScreen
   drawKeyboard (keyboard state) (currentScale state) (V2 10 50) (V2 1900 180)
-  drawScaleSelect (scaleSelect state)
+  drawUIText state
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
 
-drawScaleSelect :: ScaleSelect -> IO ()
-drawScaleSelect (ScaleSelect { root = r, scaleType = st, waitingForInput = w, availScaleTypes = sts, inputNotes = ns }) = do
-  drawText (makeGColor 1 1 1) (V2 100 400) $ "Scale: " ++ (text r st w)
+drawUIText :: State -> IO ()
+drawUIText state = do
+  drawText (makeGColor 1 1 1) (V2 100 400) $ "Scale: " ++ (drawScaleSelectText $ scaleSelect state)
+  drawText (makeGColor 1 1 1) (V2 100 500) $ "Notes: " ++ (intercalate " " $ map show $ keysPlaying $ keyboard state)
   where
-  text (Just r) (Just st) _ = show (Scale r st)
-  text Nothing _ True = "waiting for root..."
-  text (Just r) Nothing True = (show r) ++ " " ++ (intercalate " / " $ map show sts) ++ " ?"
-  text _ _ _ = "none"
+  drawScaleSelectText :: ScaleSelect -> String
+  drawScaleSelectText ScaleSelect { root = Just r, scaleType = Just st } = show (Scale r st)
+  drawScaleSelectText ScaleSelect { root = Nothing, waitingForInput = True } = "waiting for root..."
+  drawScaleSelectText ScaleSelect { root = Just r, scaleType = Nothing, waitingForInput = True, availScaleTypes = sts } = (show r) ++ " " ++ (intercalate " / " $ map show sts) ++ " ?"
+  drawScaleSelectText _ = "none"
