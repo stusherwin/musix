@@ -27,7 +27,7 @@ transposeBy interval = toNote . (+ interval) . fromNote
 intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
-data ScaleType = Major | Minor | Diminished | WholeTone | Altered deriving (Enum)
+data ScaleType = Major | Minor | Diminished | WholeTone | Altered deriving (Eq, Enum)
 
 scaleTypes = [Major ..]
 
@@ -112,18 +112,21 @@ chordNotes (Chord root chordType) = (transposeTo root) . chordNotes' $ chordType
 
 xs `containedIn` ys = all (`elem` ys) xs
 
+scalesFor :: [Note] -> [Scale]
 scalesFor [] = []
 scalesFor notes =
   List.nub $ [ s | s <- scales, notes `containedIn` (scaleNotes s) ] where
     scales = [Scale r t | r <- [C ..], t <- [Major ..]]
 
+scaleTypesFor :: Note -> [Note] -> [ScaleType]
 scaleTypesFor root = map (\(Scale _ st) -> st) . filter (\s@(Scale r st) -> s == (Scale root st)) . scalesFor
 
-chordsFor [] = []
-chordsFor notes =
-  List.groupBy sameRoots [ c | c <- chords, (chordNotes c) `containedIn` notes ] where
-    sameRoots (Chord a _) (Chord b _) = a == b
-    chords = [Chord r t | r <- [C ..], t <- [Maj ..]]
+-- chordsFor :: [Note] -> [Chord]
+-- chordsFor [] = []
+-- chordsFor notes =
+--   List.groupBy sameRoots [ c | c <- chords, (chordNotes c) `containedIn` notes ] where
+--     sameRoots (Chord a _) (Chord b _) = a == b
+--     chords = [Chord r t | r <- [C ..], t <- [Maj ..]]
 
 neighbours :: Scale -> Int -> [Scale]
 neighbours scale dist =

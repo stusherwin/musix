@@ -5,10 +5,12 @@ import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
 import Data.List ( elemIndex, intercalate, find, delete )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
-import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre )
+import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch )
+import FRP.Yampa.Delays ( fby )
 import Graphics.UI.GLUT  ( getArgsAndInitialize, createWindow, fullScreen, flush, mainLoop, leaveMainLoop )
 import System.Exit ( exitWith, ExitCode(ExitSuccess) )
 import Control.Concurrent ( threadDelay )
+import Debug.Trace (trace)
 
 import Graphics
 import Keyboard
@@ -28,10 +30,12 @@ data ScaleSelect = ScaleSelect { root :: Maybe Note
                                , inputNotes :: [Int]
                                , availScaleTypes :: [ScaleType]
                                , actionKey :: Int
-                               }
+                               , actionKeyPressed :: Bool
+                               } deriving (Eq, Show)
+
 data State = State { keyboard :: Keyboard
                    , scaleSelect :: ScaleSelect
-                   }
+                   } deriving (Eq, Show)
 
 currentScale (State { scaleSelect = ScaleSelect { root = Just r, scaleType = Just st } }) = Just $ Scale r st
 currentScale _ = Nothing
@@ -42,7 +46,7 @@ main = do
   _window <- createWindow "Musix"
   fullScreen
  
-  let keyboard = makeKeyboard 21 108
+  let keyboard = makeKeyboard 0 83 -- 21 108
       state = State { keyboard = keyboard
                     , scaleSelect = ScaleSelect { root = Nothing
                                                 , scaleType = Nothing
@@ -50,6 +54,7 @@ main = do
                                                 , inputNotes = []
                                                 , availScaleTypes = []
                                                 , actionKey = firstKey keyboard
+                                                , actionKeyPressed = False
                                                 } 
                     }
 
@@ -90,20 +95,85 @@ mainSF = proc (event, state) -> do
   vmidi <- virtualMidi -< uiAction
   let midi = rMerge vmidi (getMidi event)
   keyboard' <- pressKey -< (midi, keyboard state)
-  scaleSelect' <- changeScale -< (midi, scaleSelect state)
+  scaleSelect' <- changeScale -< (scaleSelect state, midi)
 
   let state' = state { keyboard = keyboard'
                      , scaleSelect = scaleSelect'
                      }
 
-  let io = case (uiAction, keyboard' /= keyboard state) of
-            (Event (UIReshape size), _) -> Event (reshape size >> render state >> return False)
-            (Event (UIKeyDown '\27'), _) -> Event (render state >> return True)
-            (Event UIRefresh, _) -> Event (render state >> return False)
-            (_, True) -> Event (render state >> return False)
-            _ -> NoEvent
+  let io = ui state' uiAction
 
   returnA -< (io, state')
+
+type ScaleSelectSF = SF (ScaleSelect, Event MidiEvent) ScaleSelect
+
+changeScale :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+changeScale = proc (scaleSelect, midi) -> do
+  scaleSelect' <- action -< (scaleSelect, midi)
+  scaleSelect'' <- decision None -< (scaleSelect', midi)
+  returnA -< scaleSelect''
+
+data X = None | WaitForRoot | WaitForScaleType Note deriving (Show)
+
+decision :: X -> SF (ScaleSelect, Event MidiEvent) ScaleSelect
+decision x = dSwitch (sf x) decision
+  where
+  sf :: X -> SF (ScaleSelect, Event MidiEvent) (ScaleSelect, Event X)
+  sf None = proc i@(scaleSelect, midi) -> do
+    let out = case (waitingForInput scaleSelect, root scaleSelect, scaleType scaleSelect, midi) of
+                 (True, Nothing, _, _) -> trace ("none in:" ++ show i) $ (scaleSelect, Event WaitForRoot)
+                 (True, Just _, Just _, _) -> trace ("none in):" ++ show i) $ (scaleSelect { waitingForInput = False }, NoEvent)
+                 _ -> (scaleSelect, NoEvent)
+    returnA -< case midi of
+                 Event _ -> trace ("none out: " ++ show out) $ out
+                 _ -> out
+  sf WaitForRoot = proc i@(scaleSelect, midi) -> do
+    let out = case midi of
+                Event (NoteOn n) -> trace ("waitForRoot in: " ++ show i) $ (scaleSelect { root = Just $ toNote n, inputNotes = [n] }, Event $ WaitForScaleType (toNote n))
+                Event (NoteOff n) -> trace ("waitForRoot in: " ++ show i) $ (scaleSelect, NoEvent)
+                _ -> (scaleSelect, NoEvent)
+    returnA -< case midi of
+                 Event _ -> trace ("waitForRoot out: " ++ show out) $ out
+                 _ -> out
+  sf (WaitForScaleType root) = proc i@(scaleSelect, midi) -> do
+    let ns = inputNotes scaleSelect
+    let ns' = case midi of
+                Event (NoteOn n) -> trace ("waitForScaleType in: " ++ show i) $ if n `elem` ns then ns else n : ns
+                Event (NoteOff n) -> trace ("waitForScaleType in: " ++ show i) $ delete n ns
+                _ -> ns
+    let availScaleTypes' = scaleTypesFor root $ map toNote ns'
+    let playingRoot = any (\n -> toNote n == root) ns'
+    let root' = if playingRoot then Just root else Nothing
+    let scaleType' = case availScaleTypes' of
+                       [st] -> Just st
+                       _ -> Nothing
+    let out = (scaleSelect { inputNotes = ns'
+                           , availScaleTypes = availScaleTypes'
+                           , scaleType = scaleType'
+                           , root = root'
+                           }, case (scaleType', root') of
+                                (Just _, _) -> Event None
+                                (_, Nothing) -> Event None
+                                _ -> NoEvent)
+    returnA -< case midi of
+                 Event _ -> trace ("waitForScaleType out: " ++ show out) $ out
+                 _ -> out
+
+action :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+action = proc i@(scaleSelect, midi) -> do
+  let out = case (midi, waitingForInput scaleSelect) of
+              (Event (NoteOn n), False) | n == (actionKey scaleSelect) -> trace ("action in: " ++ show i) $ scaleSelect { waitingForInput = True, root = Nothing, scaleType = Nothing, inputNotes = [], availScaleTypes = [] }
+              (Event (NoteOn n), True) | n == (actionKey scaleSelect) -> trace ("action in: " ++ show i) $ scaleSelect { waitingForInput = False, root = Nothing, scaleType = Nothing, inputNotes = [], availScaleTypes = [] }
+              _ -> scaleSelect
+  returnA -< case midi of
+               Event _ -> trace ("action out: " ++ show out) $ out
+               _ -> out
+
+ui :: State -> Event UIAction -> Event (IO Bool)
+ui state (Event (UIReshape size)) = Event (reshape size >> render state >> return False)
+ui state (Event (UIKeyDown '\27')) = Event (render state >> return True)
+ui state (Event UIRefresh) = Event (render state >> return False)
+ui _ _ = NoEvent
 
 getUIAction :: Event EventType -> Event UIAction
 getUIAction (Event (UI uiAction)) = Event uiAction
@@ -131,67 +201,6 @@ pressKey = proc (event, keyboard) -> do
                Event (NoteOn n)  -> keyDown n keyboard
                Event (NoteOff n) -> keyUp n keyboard
                _ -> keyboard
-  
-changeScale :: SF (Event MidiEvent, ScaleSelect) ScaleSelect
-changeScale = proc (event, ss) -> do
-  returnA -< case (event, ss) of
-               (Event (NoteOn n), ScaleSelect { waitingForInput = False }) | n == actionKey ss ->
-                 ss { waitingForInput = True
-                    , root = Nothing
-                    , scaleType = Nothing
-                    , inputNotes = []
-                    , availScaleTypes = []
-                    }
-
-               (Event (NoteOn n), ScaleSelect { waitingForInput = True }) | n == actionKey ss ->
-                 ss { waitingForInput = False
-                    , root = Nothing
-                    , scaleType = Nothing
-                    }
-
-               (Event (NoteOn n), ScaleSelect { root = Nothing
-                                              , scaleType = Nothing
-                                              , waitingForInput = True
-                                              , inputNotes = ns }) ->
-                 let r = toNote n
-                     ns' = n : ns
-                     sts' = scaleTypesFor r $ map toNote ns'
-                 in  ss { root = Just $ r
-                        , inputNotes = ns'
-                        , availScaleTypes = sts'
-                        }
-
-               (Event (NoteOn n), ScaleSelect { root = Just r
-                                              , scaleType = Nothing
-                                              , waitingForInput = True
-                                              , inputNotes = ns }) ->
-                 let ns' = if n `elem` ns then ns else n : ns
-                     sts' = scaleTypesFor r $ map toNote ns'
-                 in  case sts' of 
-                       [st] -> ss { waitingForInput = False
-                                  , scaleType = Just st
-                                  }
-                       _ -> ss { inputNotes = ns'
-                               , availScaleTypes = sts'
-                               }                 
-
-               (Event (NoteOff n), ScaleSelect { root = Just r
-                                               , scaleType = Nothing
-                                               , waitingForInput = True
-                                               , inputNotes = ns }) ->
-                 let ns' = delete n ns
-                     sts' = scaleTypesFor r $ map toNote ns'
-                     playingRoot = any (\n -> toNote n == r) ns'
-                 in  case playingRoot of
-                       True -> ss { inputNotes = ns'
-                                  , availScaleTypes = sts'
-                                  }
-                       _ -> ss { root = Nothing
-                               , inputNotes = ns'
-                               , availScaleTypes = sts'
-                               }
-
-               (_, _) -> ss
 
 render :: State -> IO ()
 render state = do
