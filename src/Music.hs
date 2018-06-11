@@ -69,9 +69,9 @@ scaleNotes (Scale root scaleType) =
 
 data ChordType = Maj | Maj6 | Maj7 | Dom7 | Dom9 | Dom13 | Dom7b5
                | Min | Min6 | Min7 | Min9 | MinMaj7 | Min7b5
-               | Dim | Alt deriving (Enum)
+               | Dim | Alt deriving (Eq, Enum)
 
-data Chord = Chord Note ChordType
+data Chord = Chord Note ChordType deriving (Eq)
 
 instance Show Chord where
   show (Chord r t) = (show r) ++ (chord t) where
@@ -120,6 +120,9 @@ scalesFor notes =
 
 scaleTypesFor :: Note -> [Note] -> [ScaleType]
 scaleTypesFor root = map (\(Scale _ st) -> st) . filter (\s@(Scale r st) -> s == (Scale root st)) . scalesFor
+
+scalesForRoot :: Note -> [Note] -> [Scale]
+scalesForRoot root = filter (\s@(Scale r st) -> s == (Scale root st)) . scalesFor
 
 -- chordsFor :: [Note] -> [Chord]
 -- chordsFor [] = []

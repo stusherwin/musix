@@ -2,7 +2,7 @@
 import Control.Arrow ( returnA )
 import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
-import Data.List ( elemIndex, intercalate, find, delete )
+import Data.List ( elemIndex, intercalate, find, delete, sort )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>) )
@@ -24,11 +24,12 @@ type ReactState = (ReactHandle (Event UIAction, Event MidiEvent) (Event (IO Bool
 data EventType = UI UIAction
                | Midi MidiEvent deriving (Show) 
 
-data ScaleSelect = ScaleSelect { root :: Maybe Note
-                               , scaleType :: Maybe ScaleType
+data ScaleSelect = ScaleSelect { scale :: Maybe Scale
+                               , chord :: Maybe Chord
                                , waitingForInput :: Bool
                                , inputNotes :: [Int]
-                               , availScaleTypes :: [ScaleType]
+                               , availScales :: [Scale]
+                               , availChords :: [Chord]
                                , actionKey :: Int
                                } deriving (Eq, Show)
 
@@ -36,14 +37,12 @@ data State = State { keyboard :: Keyboard
                    , scaleSelect :: ScaleSelect
                    } deriving (Eq, Show)
 
-currentScale (State { scaleSelect = ScaleSelect { root = Just r, scaleType = Just st } }) = Just $ Scale r st
-currentScale _ = Nothing
-
 clear :: ScaleSelect -> ScaleSelect
-clear ss = ss { root = Nothing
-              , scaleType = Nothing
+clear ss = ss { scale = Nothing
+              , chord = Nothing
               , inputNotes = []
-              , availScaleTypes = []
+              , availScales = []
+              , availChords = []
               }
 
 main :: IO ()
@@ -54,12 +53,13 @@ main = do
  
   let keyboard = makeKeyboard 0 83 -- 21 108
       state = State { keyboard = keyboard
-                    , scaleSelect = ScaleSelect { root = Nothing
-                                                , scaleType = Nothing
+                    , scaleSelect = ScaleSelect { scale = Nothing
                                                 , waitingForInput = False
                                                 , inputNotes = []
-                                                , availScaleTypes = []
+                                                , availScales = []
+                                                , availChords = []
                                                 , actionKey = firstKey keyboard
+                                                , chord = Nothing
                                                 }
                     }
 
@@ -121,38 +121,30 @@ changeScale = proc input -> do
   decision = proc (ss, midi) -> do
     returnA -< case (ss, midi) of
                  (ScaleSelect { waitingForInput = False, actionKey = ak }, Event (NoteOn n)) | n == ak
-                   -> Event $ clear ss { waitingForInput = True } -:> waitForRoot
+                   -> Event $ clear ss { waitingForInput = True } -:> waitForScale
                  (ScaleSelect { waitingForInput = True, actionKey = ak }, Event (NoteOn n)) | n == ak
                    -> Event $ clear ss { waitingForInput = False } -:> arr fst
-                 (ScaleSelect { waitingForInput = True, root = Just r, inputNotes = ns}, _) | not (playingNote r ns)
-                   -> Event $ ss { root = Nothing } -:> waitForRoot
-                 (ScaleSelect { waitingForInput = True, root = Just r, scaleType = Nothing }, _)
-                   -> Event $ waitForScaleType r
-                 (ScaleSelect { waitingForInput = True, root = Just _, scaleType = Just _ }, _)
+                 (ScaleSelect { waitingForInput = True, scale = Just _ }, _)
                    -> Event $ ss { waitingForInput = False } -:> arr fst
                  _ -> NoEvent
     where
     playingNote note notes = any (\n -> toNote n == note) $ notes
   
-  waitForRoot :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
-  waitForRoot = proc (ss, midi) -> do
-    returnA -< case midi of
-                 Event (NoteOn n) -> ss { root = Just $ toNote n, inputNotes = [n] }
-                 _ -> ss
-  
-  waitForScaleType :: Note -> SF (ScaleSelect, Event MidiEvent) ScaleSelect
-  waitForScaleType root = proc (ss, midi) -> do
+  waitForScale :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+  waitForScale = proc (ss, midi) -> do
     let ns = inputNotes ss
     let ns' = case midi of
-                Event (NoteOn n) -> if n `elem` ns then ns else n : ns
+                Event (NoteOn n) -> if n `elem` ns then ns else sort $ n : ns
                 Event (NoteOff n) -> delete n ns
                 _ -> ns
-    let sts = scaleTypesFor root $ map toNote ns'
+    let scs = case ns' of
+                n : ns -> scalesForRoot (toNote n) $ map toNote ns'
+                _ -> []
     returnA -< ss { inputNotes = ns'
-                  , availScaleTypes = sts
-                  , scaleType = case sts of
-                                  [st] -> Just st
-                                  _ -> Nothing
+                  , availScales = scs
+                  , scale = case scs of
+                              [sc] -> Just sc
+                              _ -> Nothing
                   }
 
 ui :: State -> Event UIAction -> Event (IO Bool)
@@ -191,7 +183,7 @@ pressKey = proc (event, keyboard) -> do
 render :: State -> IO ()
 render state = do
   clearScreen
-  drawKeyboard (keyboard state) (currentScale state) (V2 10 50) (V2 1900 180)
+  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 50) (V2 1900 180)
   drawUIText state
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
@@ -202,8 +194,8 @@ drawUIText state = do
   drawText (makeGColor 1 1 1) (V2 100 500) $ "Notes: " ++ (intercalate " " $ map show $ keysPlaying $ keyboard state)
   where
   drawScaleSelectText :: ScaleSelect -> String
-  drawScaleSelectText ScaleSelect { root = Just r, scaleType = Just st } = show (Scale r st)
-  drawScaleSelectText ScaleSelect { root = Nothing, waitingForInput = True } = "waiting for root..."
-  drawScaleSelectText ScaleSelect { root = Just r, scaleType = Nothing, waitingForInput = True, availScaleTypes = [] } = (show r) ++ " ?"
-  drawScaleSelectText ScaleSelect { root = Just r, scaleType = Nothing, waitingForInput = True, availScaleTypes = sts } = (show r) ++ " " ++ (intercalate " / " $ map show sts)
+  drawScaleSelectText ScaleSelect { scale = Just sc } = show sc
+  drawScaleSelectText ScaleSelect { scale = Nothing, waitingForInput = True, inputNotes = [] } = "waiting for scale..."
+  drawScaleSelectText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = [], inputNotes = n : ns } = show n ++ " ?"
+  drawScaleSelectText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = scs } = intercalate " / " $ map show scs
   drawScaleSelectText _ = "none"
