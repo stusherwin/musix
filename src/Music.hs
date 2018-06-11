@@ -21,9 +21,16 @@ instance Show Note where
   show B = "B"
 
 notes = [C ..]
+
+fromNote :: Note -> Int
 fromNote = fromJust . (`List.elemIndex` notes)
+
+toNote :: Int -> Note
 toNote = (notes !!) . (`mod` (length notes))
+
+transposeBy :: Int -> Note -> Note
 transposeBy interval = toNote . (+ interval) . fromNote
+
 intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
@@ -53,6 +60,16 @@ instance Eq Scale where
   (Scale n1 Diminished) == (Scale n2 Diminished) = fromNote n1 `mod` 3 == fromNote n2 `mod` 3
   -- (Scale n1 Altered) == (Scale n2 Altered) = n1 == n2
   _ == _ = False
+
+
+showInKey :: Note -> Scale -> String
+showInKey k (Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt"
+showInKey k s@(Scale r Diminished) | s == (Scale k Diminished) = show (Scale k Diminished)
+showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 1 k) Diminished) = show (Scale (transposeBy 1 k) Diminished)
+showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 2 k) Diminished) = show (Scale (transposeBy 2 k) Diminished)
+showInKey k s@(Scale r WholeTone) | s == (Scale k WholeTone) = show (Scale k WholeTone)
+showInKey k s@(Scale r WholeTone) | s == (Scale (transposeBy 1 k) WholeTone) = show (Scale (transposeBy 1 k) WholeTone)
+showInKey _ s = show s
 
 inScale :: Scale -> Note -> Bool
 inScale scale n = n `elem` (scaleNotes scale)

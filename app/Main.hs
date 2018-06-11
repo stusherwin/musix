@@ -3,6 +3,7 @@ import Control.Arrow ( returnA )
 import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub )
+import Data.Maybe ( listToMaybe )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>) )
@@ -24,12 +25,13 @@ type ReactState = (ReactHandle (Event UIAction, Event MidiEvent) (Event (IO Bool
 data EventType = UI UIAction
                | Midi MidiEvent deriving (Show) 
 
-data ScaleSelect = ScaleSelect {  scale :: Maybe Scale
+data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , availScales :: [Scale]
                                , chord :: Maybe Chord
                                , availChords :: [Chord]
                                , waitingForInput :: Bool
                                , inputNotes :: [Int]
+                               , root :: Maybe Note
                                , actionKey :: Int
                                } deriving (Eq, Show)
 
@@ -41,6 +43,7 @@ clear :: ScaleSelect -> ScaleSelect
 clear ss = ss { scale = Nothing
               , chord = Nothing
               , inputNotes = []
+              , root = Nothing
               , availScales = []
               , availChords = []
               }
@@ -59,6 +62,7 @@ main = do
                                                 , availChords = []
                                                 , waitingForInput = False
                                                 , inputNotes = []
+                                                , root = Nothing
                                                 , actionKey = firstKey keyboard
                                                 }
                     }
@@ -145,13 +149,12 @@ changeScale = proc input -> do
                 Event (NoteOn n) -> if n `elem` ns then ns else sort $ n : ns
                 Event (NoteOff n) -> delete n ns
                 _ -> ns
-    returnA -< ss { inputNotes = ns' }
+    returnA -< ss { inputNotes = ns', root = toNote <$> listToMaybe ns' }
 
   waitForChord :: SF ScaleSelect ScaleSelect
   waitForChord = proc ss -> do
-    let ns = inputNotes ss
-    let cs = case ns of
-               n : nss -> chordsForRoot (toNote n) $ map toNote ns
+    let cs = case root ss of
+               Just r -> chordsForRoot r $ map toNote $ inputNotes ss
                _ -> []
     returnA -< ss { availChords = cs
                   , chord = case cs of
@@ -161,9 +164,8 @@ changeScale = proc input -> do
 
   waitForScale :: SF ScaleSelect ScaleSelect
   waitForScale = proc ss -> do
-    let ns = inputNotes ss
     let scs = let chordScales = nub [ s | c <- availChords ss, s <- map fst $ scalesForChord c ]
-                  notes = map toNote ns
+                  notes = map toNote $ inputNotes ss
               in  filter (\s -> notes `containedIn` (scaleNotes s)) chordScales
     returnA -< ss { availScales = scs
                   , scale = case scs of
@@ -223,13 +225,13 @@ drawUIText state = do
   drawChordText :: ScaleSelect -> String
   drawChordText ScaleSelect { chord = Just sc } = show sc
   drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, inputNotes = [] } = "waiting for chord..."
-  drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, availChords = [], inputNotes = n : ns } = show (toNote n) ++ " ?"
+  drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, availChords = [], root = Just r } = show r ++ " ?"
   drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, availChords = cs } = intercalate " / " $ map show cs
   drawChordText _ = "none"
 
   drawScaleText :: ScaleSelect -> String
-  drawScaleText ScaleSelect { scale = Just sc } = show sc
+  drawScaleText ScaleSelect { scale = Just sc, root = Just r } = showInKey r sc
   drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, inputNotes = [] } = "waiting for scale..."
-  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = [], inputNotes = n : ns } = show (toNote n) ++ " ?"
-  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = scs } = intercalate " / " $ map show scs
+  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = [] } = "?"
+  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = scs, root = Just r } = intercalate " / " $ map (showInKey r) scs
   drawScaleText _ = "none"
