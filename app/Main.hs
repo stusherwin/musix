@@ -5,7 +5,7 @@ import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
 import Data.List ( elemIndex, intercalate, find, delete )
 import Data.Map.Lazy ((!))
 import qualified Data.Map.Lazy as M ()
-import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch )
+import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>) )
 import FRP.Yampa.Delays ( fby )
 import Graphics.UI.GLUT  ( getArgsAndInitialize, createWindow, fullScreen, flush, mainLoop, leaveMainLoop )
 import System.Exit ( exitWith, ExitCode(ExitSuccess) )
@@ -109,55 +109,9 @@ type ScaleSelectSF = SF (ScaleSelect, Event MidiEvent) ScaleSelect
 
 changeScale :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
 changeScale = proc (scaleSelect, midi) -> do
-  scaleSelect' <- action -< (scaleSelect, midi)
-  scaleSelect'' <- decision None -< (scaleSelect', midi)
-  returnA -< scaleSelect''
-
-data X = None | WaitForRoot | WaitForScaleType Note deriving (Show)
-
-decision :: X -> SF (ScaleSelect, Event MidiEvent) ScaleSelect
-decision x = dSwitch (sf x) decision
-  where
-  sf :: X -> SF (ScaleSelect, Event MidiEvent) (ScaleSelect, Event X)
-  sf None = proc i@(scaleSelect, midi) -> do
-    let out = case (waitingForInput scaleSelect, root scaleSelect, scaleType scaleSelect, midi) of
-                 (True, Nothing, _, _) -> trace ("none in:" ++ show i) $ (scaleSelect, Event WaitForRoot)
-                 (True, Just _, Just _, _) -> trace ("none in):" ++ show i) $ (scaleSelect { waitingForInput = False }, NoEvent)
-                 _ -> (scaleSelect, NoEvent)
-    returnA -< case midi of
-                 Event _ -> trace ("none out: " ++ show out) $ out
-                 _ -> out
-  sf WaitForRoot = proc i@(scaleSelect, midi) -> do
-    let out = case midi of
-                Event (NoteOn n) -> trace ("waitForRoot in: " ++ show i) $ (scaleSelect { root = Just $ toNote n, inputNotes = [n] }, Event $ WaitForScaleType (toNote n))
-                Event (NoteOff n) -> trace ("waitForRoot in: " ++ show i) $ (scaleSelect, NoEvent)
-                _ -> (scaleSelect, NoEvent)
-    returnA -< case midi of
-                 Event _ -> trace ("waitForRoot out: " ++ show out) $ out
-                 _ -> out
-  sf (WaitForScaleType root) = proc i@(scaleSelect, midi) -> do
-    let ns = inputNotes scaleSelect
-    let ns' = case midi of
-                Event (NoteOn n) -> trace ("waitForScaleType in: " ++ show i) $ if n `elem` ns then ns else n : ns
-                Event (NoteOff n) -> trace ("waitForScaleType in: " ++ show i) $ delete n ns
-                _ -> ns
-    let availScaleTypes' = scaleTypesFor root $ map toNote ns'
-    let playingRoot = any (\n -> toNote n == root) ns'
-    let root' = if playingRoot then Just root else Nothing
-    let scaleType' = case availScaleTypes' of
-                       [st] -> Just st
-                       _ -> Nothing
-    let out = (scaleSelect { inputNotes = ns'
-                           , availScaleTypes = availScaleTypes'
-                           , scaleType = scaleType'
-                           , root = root'
-                           }, case (scaleType', root') of
-                                (Just _, _) -> Event None
-                                (_, Nothing) -> Event None
-                                _ -> NoEvent)
-    returnA -< case midi of
-                 Event _ -> trace ("waitForScaleType out: " ++ show out) $ out
-                 _ -> out
+  -- scaleSelect' <- action -< (scaleSelect, midi)
+  scaleSelect' <- decision -< (scaleSelect, midi)
+  returnA -< scaleSelect'
 
 action :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
 action = proc i@(scaleSelect, midi) -> do
@@ -168,6 +122,54 @@ action = proc i@(scaleSelect, midi) -> do
   returnA -< case midi of
                Event _ -> trace ("action out: " ++ show out) $ out
                _ -> out
+
+decision :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+decision = proc i@(scaleSelect, midi) -> do
+  shouldSwitch <- decision -< trace ("in: " ++ show i) $ (scaleSelect, midi)
+  out <- rSwitch (arr fst) -< ((scaleSelect, midi), shouldSwitch)
+  returnA -< trace ("out: " ++ show out) $ out
+
+  where
+  decision :: SF (ScaleSelect, Event MidiEvent) (Event (SF (ScaleSelect, Event MidiEvent) ScaleSelect))
+  decision = proc i@(scaleSelect, midi) -> do
+    returnA -< case (midi, waitingForInput scaleSelect, root scaleSelect, scaleType scaleSelect) of
+                 (Event (NoteOn n), False, _, _) | n == (actionKey scaleSelect) -> trace ("decision in: " ++ show i) $ Event $ scaleSelect { waitingForInput = True, root = Nothing, scaleType = Nothing, inputNotes = [], availScaleTypes = [] } -:> waitForRoot
+                 (Event (NoteOn n), True, _, _) | n == (actionKey scaleSelect) -> trace ("decision in: " ++ show i) $ Event $ scaleSelect { waitingForInput = False, root = Nothing, scaleType = Nothing, inputNotes = [], availScaleTypes = [] } -:> (arr fst)
+                 (_, True, Just root, _) | not (playingNote root (inputNotes scaleSelect)) -> trace ("decision in:" ++ show i) $ Event $ scaleSelect { root = Nothing } -:> waitForRoot
+                 (_, True, Just root, Nothing) -> trace ("decision in:" ++ show i) $ Event $ waitForScaleType root
+                 (_, True, Just _, Just _) -> trace ("decision in:" ++ show i) $ Event $ scaleSelect { waitingForInput = False } -:> (arr fst)
+                 _ -> NoEvent
+    where
+    playingNote note notes = any (\n -> toNote n == note) $ notes
+  
+  waitForRoot :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+  waitForRoot = proc i@(scaleSelect, midi) -> do
+    let out = case midi of
+                Event (NoteOn n) -> trace ("waitForRoot in: " ++ show i) $ scaleSelect { root = Just $ toNote n, inputNotes = [n] }
+                Event (NoteOff n) -> trace ("waitForRoot in: " ++ show i) $ scaleSelect
+                _ -> scaleSelect
+    returnA -< case midi of
+                 Event _ -> trace ("waitForRoot out: " ++ show out) $ out
+                 _ -> out
+  
+  waitForScaleType :: Note -> SF (ScaleSelect, Event MidiEvent) ScaleSelect
+  waitForScaleType root = proc i@(scaleSelect, midi) -> do
+    let ns = inputNotes scaleSelect
+    let ns' = case midi of
+                Event (NoteOn n) -> trace ("waitForScaleType in: " ++ show i) $ if n `elem` ns then ns else n : ns
+                Event (NoteOff n) -> trace ("waitForScaleType in: " ++ show i) $ delete n ns
+                _ -> ns
+    let availScaleTypes' = scaleTypesFor root $ map toNote ns'
+    let scaleType' = case availScaleTypes' of
+                       [st] -> Just st
+                       _ -> Nothing
+    let out = scaleSelect { inputNotes = ns'
+                          , availScaleTypes = availScaleTypes'
+                          , scaleType = scaleType'
+                          }
+    returnA -< case midi of
+                 Event _ -> trace ("waitForScaleType out: " ++ show out) $ out
+                 _ -> out
 
 ui :: State -> Event UIAction -> Event (IO Bool)
 ui state (Event (UIReshape size)) = Event (reshape size >> render state >> return False)
