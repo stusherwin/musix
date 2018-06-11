@@ -4,6 +4,11 @@ import Data.List ( delete )
 
 import Music
 
+data Keyboard = Keyboard { firstKey :: Int
+                         , lastKey :: Int
+                         , keysPlaying :: [Int]
+                         } deriving (Show, Eq)
+
 data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , availScales :: [Scale]
                                , chord :: Maybe Chord
@@ -30,19 +35,14 @@ initState keyboard = State { keyboard = keyboard
                                                        }
                            }
 
-clear :: ScaleSelect -> ScaleSelect
-clear ss = ss { scale = Nothing
+clearSS :: ScaleSelect -> ScaleSelect
+clearSS ss = ss { scale = Nothing
               , chord = Nothing
               , inputNotes = []
               , root = Nothing
               , availScales = []
               , availChords = []
               }
-
-data Keyboard = Keyboard { firstKey :: Int
-                         , lastKey :: Int
-                         , keysPlaying :: [Int]
-                         } deriving (Show, Eq)
 
 makeKeyboard :: Int -> Int -> Keyboard
 makeKeyboard start end = Keyboard start end []
