@@ -1,8 +1,7 @@
 module Music where
 
-import qualified Data.List as List
-import Data.Maybe
-import Control.Applicative
+import Data.List ( delete, elemIndex, nub, sort, sortOn )
+import Data.Maybe ( fromJust, isJust )
 
 data Note = C | Cs | D | Eb | E | F | Fs | G | Ab | A | Bb | B deriving (Eq, Ord, Enum)
 
@@ -23,7 +22,7 @@ instance Show Note where
 notes = [C ..]
 
 fromNote :: Note -> Int
-fromNote = fromJust . (`List.elemIndex` notes)
+fromNote = fromJust . (`elemIndex` notes)
 
 toNote :: Int -> Note
 toNote = (notes !!) . (`mod` (length notes))
@@ -34,8 +33,7 @@ transposeBy interval = toNote . (+ interval) . fromNote
 intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
-data ScaleType = Major | Minor | Diminished | WholeTone {-| Altered-} deriving (Eq, Enum)
-
+data ScaleType = Major | Minor | Diminished | WholeTone deriving (Eq, Enum)
 scaleTypes = [Major ..]
 
 nextIn :: Enum a => [a] -> a -> a
@@ -60,13 +58,31 @@ instance Eq Scale where
   _ == _ = False
 
 showInKey :: Note -> Scale -> String
-showInKey k s(Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt (" ++ show s ++ ")"
+showInKey k s@(Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt (" ++ show s ++ ")"
 showInKey k s@(Scale r Diminished) | s == (Scale k Diminished) = show (Scale k Diminished)
 showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 1 k) Diminished) = show (Scale (transposeBy 1 k) Diminished)
 showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 2 k) Diminished) = show (Scale (transposeBy 2 k) Diminished)
 showInKey k s@(Scale r WholeTone) | s == (Scale k WholeTone) = show (Scale k WholeTone)
 showInKey k s@(Scale r WholeTone) | s == (Scale (transposeBy 1 k) WholeTone) = show (Scale (transposeBy 1 k) WholeTone)
+showInKey k s@(Scale r Major) = case modeForScale s k of
+                                  Just m -> show m ++ " (" ++ show s ++ ")"
+                                  _ -> show s
 showInKey _ s = show s
+
+data ModeType = Ionian | Dorian | Phrygian | Lydian | Mixolydian | Aeolian | Locrian deriving (Enum, Show)
+modeTypes = [Ionian ..]
+
+data Mode = Mode Note ModeType
+
+instance Show Mode where
+  show (Mode n t) = (show n) ++ " " ++ (show t)
+
+modeForScale :: Scale -> Note -> Maybe Mode
+modeForScale s@(Scale k Major) root =
+  case root `elemIndex` (scaleNotes s) of
+    Just i -> Just $ Mode root $ modeTypes !! (i `mod` (length modeTypes))
+    _ -> Nothing
+mode _ _ = Nothing
 
 inScale :: Scale -> Note -> Bool
 inScale scale n = n `elem` (scaleNotes scale)
@@ -116,7 +132,7 @@ xs `containedIn` ys = all (`elem` ys) xs
 scalesFor :: [Note] -> [Scale]
 scalesFor [] = []
 scalesFor notes =
-  List.nub $ [ s | s <- scales, notes `containedIn` (scaleNotes s) ] where
+  nub $ [ s | s <- scales, notes `containedIn` (scaleNotes s) ] where
     scales = [Scale r t | r <- [C ..], t <- [Major ..]]
 
 scaleTypesFor :: Note -> [Note] -> [ScaleType]
@@ -134,7 +150,7 @@ chordsForRoot root notes = buildChords [] chords
   buildChords bcs (t:cs) | (chordNotes t) `containedIn` notes && not (any (\c -> (chordNotes t) `containedIn` (chordNotes c)) bcs) = buildChords (t:bcs) cs
   buildChords bcs (t:cs) = buildChords bcs cs
 
-  chords = List.sortOn ((0-) . length . chordNotes) [Chord root t | t <- [Maj ..]]
+  chords = sortOn ((0-) . length . chordNotes) [Chord root t | t <- [Maj ..]]
 
 neighbours :: Scale -> Int -> [Scale]
 neighbours scale dist =
@@ -151,19 +167,19 @@ distanceMap =
 
 distance :: Ord a => [a] -> [a] -> Int
 distance as bs =
-  distance' (List.sort $ as) (List.sort $ bs) 0 where
+  distance' (sort $ as) (sort $ bs) 0 where
     distance' [] [] d = d
     distance' [] (b:bs) d = distance' [] bs (d + 1)
     distance' (a:as) [] d = distance' as [] (d + 1)
     distance' (a:as) (b:bs) d
       | a == b = distance' as bs d
-      | otherwise = List.minimum [ distance' (a:as) bs (d + 1)
-                                 , distance' as (b:bs) (d + 1)
-                                 , distance' as bs (d + 1)
-                                 ]
+      | otherwise = minimum [ distance' (a:as) bs (d + 1)
+                            , distance' as (b:bs) (d + 1)
+                            , distance' as bs (d + 1)
+                            ]
 
 data ScaleChord = I | II | III | IV | V | VI | VII | VIII deriving (Eq, Enum, Show)
-fromScaleChord = fromJust . (`List.elemIndex` [I ..])
+fromScaleChord = fromJust . (`elemIndex` [I ..])
 toScaleChord = ([I ..] !!)
 
 scalesForChord :: Chord -> [(Scale, ScaleChord)]
@@ -175,7 +191,7 @@ scalesForChord chord =
 
 scaleChordFor chord@(Chord chroot chordType) scale@(Scale sroot scaleType) =
   if (chordNotes chord) `containedIn` (scaleNotes scale)
-    then (toScaleChord <$> chroot `List.elemIndex` (scaleNotes scale))
+    then (toScaleChord <$> chroot `elemIndex` (scaleNotes scale))
     else Nothing
 
 scaleCycle cycles gap startNote =
@@ -197,5 +213,5 @@ keyByValue =
   where
     addToKeysForValue xs (k, v) =
       case lookup v xs of
-        Just ks -> (v, (k : ks)) : (List.delete (v, ks) xs)
+        Just ks -> (v, (k : ks)) : (delete (v, ks) xs)
         _ -> (v, [k]) : xs
