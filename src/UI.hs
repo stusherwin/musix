@@ -193,20 +193,3 @@ drawKeyboard kbd maybeScale origin (V2 w h) = do
         blackKeyOffset = whiteKeyOffset |+| V2 (-(x blackKeyInset)) (-gap)
         drawRect' offset p1 p2 =
           drawRect keyColor (origin |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
-
-drawChordmap (ChordMap scales chords) (V2 xo yo) size = do
-  preservingMatrix $ do
-      translate $ Vector3 xo yo (0 :: GLfloat)
-      mapM_ (\(c, coords) ->
-        mapM_ (\(x, y) -> preservingMatrix $ do
-        translate $ Vector3 (fromInteger x*150) (fromInteger y*150) (0 :: GLfloat)
-        rotate 180 $ Vector3 1 0 (0 ::  GLfloat)
-        translate $ Vector3 0 (-100.0) (0 :: GLfloat)
-        GL.scale 0.25 0.25 (1::GLfloat)
-        let col = case c `elem` scales of
-                    True -> makeGColor 1 0 0
-                    _ -> makeGColor 0.3 0.3 0.3
-        drawCircle (20.0) (200.0) col (V2 0 0)
-        translate $ Vector3 (-40) (-40) (0 :: GLfloat)
-        color $ Color3 1 1 (1 :: GLfloat)
-        renderString Roman (show c)) coords) chords

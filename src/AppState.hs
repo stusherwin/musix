@@ -58,13 +58,3 @@ keyUp key kbd = kbd { keysPlaying = delete key $ keysPlaying kbd }
 
 notesPlaying :: Keyboard -> [Note]
 notesPlaying kbd = map toNote $ keysPlaying kbd
-
-data ChordMap = ChordMap [Note] [(Note, [(Integer, Integer)])] deriving (Show, Eq)
-
-chordMap :: Keyboard -> ChordMap
-chordMap keyboard = 
-  let scales = map (\(Scale r t) -> r) $ filter (\(Scale r t) -> case t of
-                                                                   Major -> True
-                                                                   _ -> False) $ scalesFor $ notesPlaying keyboard
-      chords = keyByValue . indexify2 $ map (scaleCycle 1 (-3)) (scaleCycle 1 (-5) C)
-  in  (ChordMap scales chords)
