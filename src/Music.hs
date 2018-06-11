@@ -27,7 +27,7 @@ transposeBy interval = toNote . (+ interval) . fromNote
 intervalBetween a b = ((fromNote b) - (fromNote a)) `mod` (length notes)
 transpose oldRoot newRoot = transposeBy $ intervalBetween oldRoot newRoot
 
-data ScaleType = Major | Minor | Diminished | WholeTone | Altered deriving (Eq, Enum)
+data ScaleType = Major | Minor | Diminished | WholeTone {-| Altered-} deriving (Eq, Enum)
 
 scaleTypes = [Major ..]
 
@@ -41,7 +41,7 @@ instance Show ScaleType where
   show Minor = "minor"
   show Diminished = "diminished"
   show WholeTone = "wholetone"
-  show Altered = "altered"
+  --show Altered = "altered"
 
 instance Show Scale where
   show (Scale n t) = (show n) ++ " " ++ (show t)
@@ -51,7 +51,7 @@ instance Eq Scale where
   (Scale n1 Minor) == (Scale n2 Minor) = n1 == n2
   (Scale n1 WholeTone) == (Scale n2 WholeTone) = fromNote n1 `mod` 2 == fromNote n2 `mod` 2
   (Scale n1 Diminished) == (Scale n2 Diminished) = fromNote n1 `mod` 3 == fromNote n2 `mod` 3
-  (Scale n1 Altered) == (Scale n2 Altered) = n1 == n2
+  -- (Scale n1 Altered) == (Scale n2 Altered) = n1 == n2
   _ == _ = False
 
 inScale :: Scale -> Note -> Bool
@@ -65,49 +65,49 @@ scaleNotes (Scale root scaleType) =
     scaleIntervals Minor = [2, 1, 2, 2, 2, 2]
     scaleIntervals Diminished = [1, 2, 1, 2, 1, 2, 1]
     scaleIntervals WholeTone = [2, 2, 2, 2, 2]
-    scaleIntervals Altered = [1, 2, 1, 2, 2, 2]
+    -- scaleIntervals Altered = [1, 2, 1, 2, 2, 2]
 
-data ChordType = Maj | Maj6 | Maj7 | Dom7 | Dom9 | Dom13 | Dom7b5
-               | Min | Min6 | Min7 | Min9 | MinMaj7 | Min7b5
-               | Dim | Alt deriving (Eq, Enum)
+data ChordType = Maj {-| Maj6-} | Maj7 | Dom7 {-| Dom9 | Dom13-} | Dom7b5
+               | Min {-| Min6-} | Min7 {-| Min9-} | MinMaj7 | Min7b5
+               {-| Dim-} | Alt deriving (Eq, Enum)
 
 data Chord = Chord Note ChordType deriving (Eq)
 
 instance Show Chord where
   show (Chord r t) = (show r) ++ (chord t) where
     chord Maj = ""
-    chord Maj6 = "6"
+    -- chord Maj6 = "6"
     chord Maj7 = "M7"
     chord Dom7 = "7"
-    chord Dom9 = "9"
-    chord Dom13 = "13"
+    -- chord Dom9 = "9"
+    -- chord Dom13 = "13"
     chord Dom7b5 = "7b5"
     chord Min = "m"
-    chord Min6 = "m6"
+    -- chord Min6 = "m6"
     chord Min7 = "m7"
-    chord Min9 = "m9"
+    -- chord Min9 = "m9"
     chord MinMaj7 = "mM7"
     chord Min7b5 = "m7b5"
-    chord Dim = "o"
+    -- chord Dim = "o"
     chord Alt = "alt"
 
 chordNotes (Chord root chordType) = (transposeTo root) . chordNotes' $ chordType
   where
     transposeTo = map . (transpose C)
-    chordNotes' Maj = [C, E, G]
-    chordNotes' Maj6 = [C, E, G, A]
-    chordNotes' Maj7 = [C, E, G, B]
-    chordNotes' Dom7 = [C, E, G, Bb]
-    chordNotes' Dom9 = [C, E, G, Bb, D]
-    chordNotes' Dom13 = [C, E, G, Bb, A]
+    chordNotes' Maj = [C, E]
+    -- chordNotes' Maj6 = [C, E, G, A]
+    chordNotes' Maj7 = [C, E, B]
+    chordNotes' Dom7 = [C, E, Bb]
+    -- chordNotes' Dom9 = [C, E, Bb, D]
+    -- chordNotes' Dom13 = [C, E, Bb, A]
     chordNotes' Dom7b5 = [C, E, Fs, Bb]
-    chordNotes' Min = [C, Eb, G]
-    chordNotes' Min6 = [C, Eb, G, A]
+    chordNotes' Min = [C, Eb] 
+    -- chordNotes' Min6 = [C, Eb, G, A]
     chordNotes' Min7 = [C, Eb, G, Bb]
-    chordNotes' Min9 = [C, Eb, G, Bb, D]
-    chordNotes' MinMaj7 = [C, Eb, G, B]
+    -- chordNotes' Min9 = [C, Eb, G, Bb, D]
+    chordNotes' MinMaj7 = [C, Eb, B]
     chordNotes' Min7b5 = [C, Eb, Fs, Bb]
-    chordNotes' Dim = [C, Eb, Fs, A]
+    -- chordNotes' Dim = [C, Eb, Fs, A]
     chordNotes' Alt = [C, E, Bb, Eb, Ab]
 
 xs `containedIn` ys = all (`elem` ys) xs
@@ -124,12 +124,16 @@ scaleTypesFor root = map (\(Scale _ st) -> st) . filter (\s@(Scale r st) -> s ==
 scalesForRoot :: Note -> [Note] -> [Scale]
 scalesForRoot root = filter (\s@(Scale r st) -> s == (Scale root st)) . scalesFor
 
--- chordsFor :: [Note] -> [Chord]
--- chordsFor [] = []
--- chordsFor notes =
---   List.groupBy sameRoots [ c | c <- chords, (chordNotes c) `containedIn` notes ] where
---     sameRoots (Chord a _) (Chord b _) = a == b
---     chords = [Chord r t | r <- [C ..], t <- [Maj ..]]
+chordsForRoot :: Note -> [Note] -> [Chord] 
+chordsForRoot _ [] = []
+chordsForRoot root notes = buildChords [] chords
+  where
+  buildChords :: [Chord] -> [Chord] -> [Chord]
+  buildChords bcs [] = bcs
+  buildChords bcs (t:cs) | (chordNotes t) `containedIn` notes && not (any (\c -> (chordNotes t) `containedIn` (chordNotes c)) bcs) = buildChords (t:bcs) cs
+  buildChords bcs (t:cs) = buildChords bcs cs
+
+  chords = List.sortOn ((0-) . length . chordNotes) [Chord root t | t <- [Maj ..]]
 
 neighbours :: Scale -> Int -> [Scale]
 neighbours scale dist =
@@ -161,6 +165,7 @@ data ScaleChord = I | II | III | IV | V | VI | VII | VIII deriving (Eq, Enum, Sh
 fromScaleChord = fromJust . (`List.elemIndex` [I ..])
 toScaleChord = ([I ..] !!)
 
+scalesForChord :: Chord -> [(Scale, ScaleChord)]
 scalesForChord chord =
   [(s, fromJust p) | (s, p) <- scaleChords, isJust p]
   where
