@@ -13,7 +13,7 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , availScales :: [Scale]
                                , chord :: Maybe Chord
                                , availChords :: [Chord]
-                               , waitingForInput :: Bool
+                               , parsing :: Bool
                                , root :: Maybe Note
                                , actionKey :: Int
                                } deriving (Eq, Show)
@@ -27,7 +27,7 @@ initState keyboard = State { keyboard = keyboard
                                                        , availScales = []
                                                        , chord = Nothing 
                                                        , availChords = []
-                                                       , waitingForInput = False
+                                                       , parsing = False
                                                        , root = Nothing
                                                        , actionKey = firstKey keyboard
                                                        }
