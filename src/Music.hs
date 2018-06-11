@@ -59,7 +59,6 @@ instance Eq Scale where
   (Scale n1 Diminished) == (Scale n2 Diminished) = fromNote n1 `mod` 3 == fromNote n2 `mod` 3
   _ == _ = False
 
-
 showInKey :: Note -> Scale -> String
 showInKey k s(Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt (" ++ show s ++ ")"
 showInKey k s@(Scale r Diminished) | s == (Scale k Diminished) = show (Scale k Diminished)
