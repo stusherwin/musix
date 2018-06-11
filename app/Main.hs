@@ -7,7 +7,7 @@ import Data.Maybe ( listToMaybe )
 import Data.Map.Lazy ( (!) )
 import FRP.Yampa ( ReactHandle, Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>) )
 import FRP.Yampa.Delays ( fby )
-import Graphics.UI.GLUT  ( getArgsAndInitialize, createWindow, fullScreen, flush, mainLoop, leaveMainLoop )
+import Graphics.UI.GLUT  ( getArgsAndInitialize, createWindow, fullScreen, flush, mainLoop, leaveMainLoop, actionOnWindowClose, ($=), ActionOnWindowClose(..) )
 import System.Exit ( exitWith, ExitCode(ExitSuccess) )
 import Control.Concurrent ( threadDelay )
 import Debug.Trace (trace)
@@ -51,6 +51,7 @@ main :: IO ()
 main = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
+  actionOnWindowClose $= ContinueExecution
   fullScreen
  
   let keyboard = makeKeyboard 21 108 -- 0 83
