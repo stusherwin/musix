@@ -102,12 +102,12 @@ instance Show Chord where
 chordNotes (Chord root chordType) = (transposeTo root) . chordNotes' $ chordType
   where
     transposeTo = map . (transpose C)
-    chordNotes' Maj = [C, E]
-    chordNotes' Maj7 = [C, E, B]
-    chordNotes' Dom7 = [C, E, Bb]
-    chordNotes' Dom7b5 = [C, E, Fs, Bb]
+    chordNotes' Maj = [C]
+    chordNotes' Maj7 = [C, B]
+    chordNotes' Dom7 = [C, Bb]
+    chordNotes' Dom7b5 = [C, Fs, Bb]
     chordNotes' Min = [C, Eb] 
-    chordNotes' Min7 = [C, Eb, G, Bb]
+    chordNotes' Min7 = [C, Eb, Bb]
     chordNotes' MinMaj7 = [C, Eb, B]
     chordNotes' Min7b5 = [C, Eb, Fs, Bb]
     chordNotes' Alt = [C, E, Bb, Eb, Ab]

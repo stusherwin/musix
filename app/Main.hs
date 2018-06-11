@@ -54,7 +54,7 @@ main = do
   _window <- createWindow "Musix"
   fullScreen
  
-  let keyboard = makeKeyboard 0 83 -- 21 108
+  let keyboard = makeKeyboard 21 108 -- 0 83
       state = State { keyboard = keyboard
                     , scaleSelect = ScaleSelect { scale = Nothing
                                                 , availScales = []
