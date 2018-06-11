@@ -61,7 +61,7 @@ instance Eq Scale where
 
 
 showInKey :: Note -> Scale -> String
-showInKey k (Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt"
+showInKey k s(Scale r Minor) | k == (transposeBy (-1) r) = (show k) ++ " alt (" ++ show s ++ ")"
 showInKey k s@(Scale r Diminished) | s == (Scale k Diminished) = show (Scale k Diminished)
 showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 1 k) Diminished) = show (Scale (transposeBy 1 k) Diminished)
 showInKey k s@(Scale r Diminished) | s == (Scale (transposeBy 2 k) Diminished) = show (Scale (transposeBy 2 k) Diminished)
