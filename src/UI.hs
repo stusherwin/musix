@@ -120,22 +120,20 @@ blueDarker = makeGColor 0.2 0.25 0.5
 
 drawUIText :: State -> IO ()
 drawUIText state = do
-  drawText (makeGColor 1 1 1) (V2 100 400) $ "Notes: " ++ (intercalate " " $ map (show . toNote) $ keysPlaying $ keyboard state)
+  drawText (makeGColor 1 1 1) (V2 100 400) $ "Notes: " ++ (intercalate " " $ map show $ notesPlaying $ keyboard state)
   drawText (makeGColor 1 1 1) (V2 100 500) $ "Chord: " ++ (drawChordText $ scaleSelect state)
   drawText (makeGColor 1 1 1) (V2 100 600) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
-  
   where
-  
   drawChordText :: ScaleSelect -> String
   drawChordText ScaleSelect { chord = Just sc } = show sc
-  drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, inputNotes = [] } = "waiting for chord..."
+  drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, root = Nothing } = "waiting for chord..."
   drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, availChords = [], root = Just r } = show r ++ " ?"
   drawChordText ScaleSelect { chord = Nothing, waitingForInput = True, availChords = cs } = intercalate " / " $ map show cs
   drawChordText _ = "none"
 
   drawScaleText :: ScaleSelect -> String
   drawScaleText ScaleSelect { scale = Just sc, root = Just r } = showInKey r sc
-  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, inputNotes = [] } = "waiting for scale..."
+  drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, root = Nothing } = "waiting for scale..."
   drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = [] } = "?"
   drawScaleText ScaleSelect { scale = Nothing, waitingForInput = True, availScales = scs, root = Just r } = intercalate " / " $ map (showInKey r) scs
   drawScaleText _ = "none"

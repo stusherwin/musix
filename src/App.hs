@@ -30,7 +30,7 @@ mainSF = proc (event, state) -> do
   vmidi <- virtualMidi -< uiAction
   let midi = rMerge vmidi (mapFilterE getMidi $ event)
   keyboard' <- pressKey -< (midi, keyboard state)
-  scaleSelect' <- changeScale -< (scaleSelect state, midi)
+  scaleSelect' <- changeScale -< (keyboard', scaleSelect state, midi)
 
   let state' = state { keyboard = keyboard'
                      , scaleSelect = scaleSelect'
@@ -59,47 +59,44 @@ pressKey = proc (event, keyboard) -> do
                Event (NoteOff n) -> keyUp n keyboard
                _ -> keyboard
 
-changeScale :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
+changeScale :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
 changeScale = proc input -> do
   shouldSwitch <- decision -< input
-  output <- rSwitch (arr fst) -< (input, shouldSwitch)
+  output <- rSwitch passThrough -< (input, shouldSwitch)
   returnA -< output
 
   where
-  decision :: SF (ScaleSelect, Event MidiEvent) (Event (SF (ScaleSelect, Event MidiEvent) ScaleSelect))
-  decision = proc (ss, midi) -> do
+  passThrough :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
+  passThrough = arr $ \(_, ss, _) -> ss
+
+  decision :: SF (Keyboard, ScaleSelect, Event MidiEvent) (Event (SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect))
+  decision = proc (kbd, ss, midi) -> do
     returnA -< case (ss, midi) of
                  (ScaleSelect { waitingForInput = False, actionKey = ak }, Event (NoteOn n)) | n == ak
                    -> Event $ clearSS ss { waitingForInput = True } -:> waitForInput
                  (ScaleSelect { waitingForInput = True, actionKey = ak }, Event (NoteOn n)) | n == ak
-                   -> Event $ clearSS ss { waitingForInput = False } -:> arr fst
+                   -> Event $ clearSS ss { waitingForInput = False } -:> passThrough
                  (ScaleSelect { waitingForInput = True, scale = Just _ }, _)
-                   -> Event $ ss { waitingForInput = False } -:> arr fst
+                   -> Event $ ss { waitingForInput = False } -:> passThrough
                  _ -> NoEvent
-    where
-    playingAllNotes :: [Note] -> [Note] -> Bool
-    playingAllNotes shouldBePlaying test = null $ shouldBePlaying \\ test
 
-  waitForInput :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
-  waitForInput = proc (ss, midi) -> do
-    ss' <- notesPlaying -< (ss, midi)
-    ssWithChord <- waitForChord -< ss'
-    ssWithScale <- waitForScale -< ssWithChord
+  waitForInput :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
+  waitForInput = proc (kbd, ss, midi) -> do
+    ssWithRoot <- findRoot -< (kbd, ss)
+    ssWithChord <- waitForChord -< (kbd, ssWithRoot)
+    ssWithScale <- waitForScale -< (kbd, ssWithChord)
     returnA -< ssWithScale
   
-  notesPlaying :: SF (ScaleSelect, Event MidiEvent) ScaleSelect
-  notesPlaying = proc (ss, midi) -> do
-    let ns = inputNotes ss
-    let ns' = case midi of
-                Event (NoteOn n) -> if n `elem` ns then ns else sort $ n : ns
-                Event (NoteOff n) -> delete n ns
-                _ -> ns
-    returnA -< ss { inputNotes = ns', root = toNote <$> listToMaybe ns' }
+  findRoot :: SF (Keyboard, ScaleSelect) ScaleSelect
+  findRoot = proc (kbd, ss) -> do
+    returnA -< case listToMaybe $ keysPlaying kbd of
+                 Just r | r /= actionKey ss -> ss { root = Just $ toNote r }
+                 _ -> ss { root = Nothing }
 
-  waitForChord :: SF ScaleSelect ScaleSelect
-  waitForChord = proc ss -> do
+  waitForChord :: SF (Keyboard, ScaleSelect) ScaleSelect
+  waitForChord = proc (kbd, ss) -> do
     let cs = case root ss of
-               Just r -> chordsForRoot r $ map toNote $ inputNotes ss
+               Just r -> chordsForRoot r $ notesPlaying kbd
                _ -> []
     returnA -< ss { availChords = cs
                   , chord = case cs of
@@ -107,10 +104,10 @@ changeScale = proc input -> do
                               _ -> Nothing
                   }
 
-  waitForScale :: SF ScaleSelect ScaleSelect
-  waitForScale = proc ss -> do
+  waitForScale :: SF (Keyboard, ScaleSelect) ScaleSelect
+  waitForScale = proc (kbd, ss) -> do
     let scs = let chordScales = nub [ s | c <- availChords ss, s <- map fst $ scalesForChord c ]
-                  notes = map toNote $ inputNotes ss
+                  notes = notesPlaying kbd
               in  filter (\s -> notes `containedIn` (scaleNotes s)) chordScales
     returnA -< ss { availScales = scs
                   , scale = case scs of

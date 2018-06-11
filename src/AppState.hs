@@ -1,6 +1,6 @@
 module AppState where
 
-import Data.List ( delete )
+import Data.List ( delete, sort )
 
 import Music
 
@@ -14,7 +14,6 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , chord :: Maybe Chord
                                , availChords :: [Chord]
                                , waitingForInput :: Bool
-                               , inputNotes :: [Int]
                                , root :: Maybe Note
                                , actionKey :: Int
                                } deriving (Eq, Show)
@@ -29,7 +28,6 @@ initState keyboard = State { keyboard = keyboard
                                                        , chord = Nothing 
                                                        , availChords = []
                                                        , waitingForInput = False
-                                                       , inputNotes = []
                                                        , root = Nothing
                                                        , actionKey = firstKey keyboard
                                                        }
@@ -38,7 +36,6 @@ initState keyboard = State { keyboard = keyboard
 clearSS :: ScaleSelect -> ScaleSelect
 clearSS ss = ss { scale = Nothing
               , chord = Nothing
-              , inputNotes = []
               , root = Nothing
               , availScales = []
               , availChords = []
@@ -50,7 +47,7 @@ makeKeyboard start end = Keyboard start end []
 keyDown :: Int -> Keyboard -> Keyboard
 keyDown key kbd | key >= firstKey kbd
                   && key <= lastKey kbd 
-                  && not (key `elem` keysPlaying kbd) = kbd { keysPlaying = key : keysPlaying kbd }
+                  && not (key `elem` keysPlaying kbd) = kbd { keysPlaying = sort $ key : keysPlaying kbd }
                 | otherwise = kbd
 
 keyUp :: Int -> Keyboard -> Keyboard
