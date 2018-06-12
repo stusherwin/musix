@@ -80,7 +80,7 @@ reshape screenSize = do
 render :: State -> IO ()
 render state = do
   clearScreen
-  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 50) (V2 1900 180)
+  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 50) 1900
   drawUIText state
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
@@ -92,8 +92,8 @@ data WhiteKeyType = L
 data Key = Wh WhiteKeyType
          | Bl deriving (Show)
 
-drawKeyboard :: Keyboard -> Maybe Scale -> V2 GLfloat -> V2 GLfloat -> IO ()
-drawKeyboard kbd maybeScale origin (V2 w h) = do
+drawKeyboard :: Keyboard -> Maybe Scale -> V2 GLfloat -> GLfloat -> IO ()
+drawKeyboard kbd maybeScale origin w = do
   mapM_ drawKey keys
   where  
   keys = zip4 keys' playing keyTypes allowed
@@ -144,14 +144,16 @@ drawKeyboard kbd maybeScale origin (V2 w h) = do
     whiteKeyOffset = V2 (noOfWhites key * (x whiteKeySize + gap)) 0
     blackKeyOffset = whiteKeyOffset |+| V2 (-(x blackKeyInset)) (-gap)
     drawRect' offset p1 p2 =
-      drawRect keyColor (origin |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
+      drawRect keyColor (origin |+| (V2 offsetX 0) |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
   
   blackKeySize = V2 16 76
   whiteKeySize = V2 26 116
   gap = 2
   keyboardWidth = ((fromIntegral $ length keys) * 7.0 / 12.0) * (x whiteKeySize + gap)
   keyboardHeight = y whiteKeySize
-  keyboardScale = V2 (w / keyboardWidth) (h / keyboardHeight)
+  sc = min (w / keyboardWidth) (((w / 1900) * 180) / keyboardHeight)
+  offsetX = max 0 ((w - (sc * keyboardWidth)) / 2)
+  keyboardScale = V2 sc sc
   blackKeyInset = V2 ((x blackKeySize + gap) / 2) (y whiteKeySize - y blackKeySize)
 
 drawUIText :: State -> IO ()
