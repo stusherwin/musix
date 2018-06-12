@@ -80,7 +80,7 @@ reshape screenSize = do
 render :: State -> IO ()
 render state = do
   clearScreen
-  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 50) 1900
+  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 100) 1900
   drawUIText state
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
@@ -95,6 +95,7 @@ data Key = Wh WhiteKeyType
 drawKeyboard :: Keyboard -> Maybe Scale -> V2 GLfloat -> GLfloat -> IO ()
 drawKeyboard kbd maybeScale origin w = do
   mapM_ drawKey keys
+  drawText (makeGColor 1 1 1) (origin |+| (V2 10 (-50))) $ deviceName kbd
   where  
   keys = zip4 keys' playing keyTypes allowed
     where
@@ -159,19 +160,19 @@ drawKeyboard kbd maybeScale origin w = do
 drawUIText :: State -> IO ()
 drawUIText state = do
   drawText (makeGColor 1 1 1) (V2 100 400) $ "Notes: " ++ (intercalate " " $ map show $ notesPlaying $ keyboard state)
-  drawText (makeGColor 1 1 1) (V2 100 500) $ "Chord: " ++ (drawChordText $ scaleSelect state)
-  drawText (makeGColor 1 1 1) (V2 100 600) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
+  drawText (makeGColor 1 1 1) (V2 100 450) $ "Chord: " ++ (drawChordText $ scaleSelect state)
+  drawText (makeGColor 1 1 1) (V2 100 500) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
   where
   drawChordText :: ScaleSelect -> String
   drawChordText ScaleSelect { chord = Just sc } = show sc
   drawChordText ScaleSelect { chord = Nothing, parsing = True, root = Nothing } = "waiting for chord..."
   drawChordText ScaleSelect { chord = Nothing, parsing = True, availChords = [], root = Just r } = show r ++ " ?"
   drawChordText ScaleSelect { chord = Nothing, parsing = True, availChords = cs } = intercalate " / " $ map show cs
-  drawChordText _ = "none"
+  drawChordText _ = ""
 
   drawScaleText :: ScaleSelect -> String
   drawScaleText ScaleSelect { scale = Just sc, root = Just r } = showInKey r sc
   drawScaleText ScaleSelect { scale = Nothing, parsing = True, root = Nothing } = "waiting for scale..."
   drawScaleText ScaleSelect { scale = Nothing, parsing = True, availScales = [] } = "?"
   drawScaleText ScaleSelect { scale = Nothing, parsing = True, availScales = scs, root = Just r } = intercalate " / " $ map (showInKey r) scs
-  drawScaleText _ = "none"
+  drawScaleText _ = ""

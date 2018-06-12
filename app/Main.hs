@@ -39,8 +39,8 @@ main = do
                  _ -> Nothing
 
   let keyboard = case source of 
-                   Just (s, (fk, lk)) -> makeKeyboard fk lk
-                   _ -> makeKeyboard 0 83
+                   Just (s, (fk, lk)) -> makeKeyboard (name s) fk lk
+                   _ -> makeKeyboard "Virtual Keyboard" 0 83
      
   (handleUI, handleMidi) <- setupYampa exitUI $ loopPre (initState keyboard) mainSF
   

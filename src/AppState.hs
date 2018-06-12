@@ -7,6 +7,7 @@ import Music
 data Keyboard = Keyboard { firstKey :: Int
                          , lastKey :: Int
                          , keysPlaying :: [Int]
+                         , deviceName :: String
                          } deriving (Show, Eq)
 
 data ScaleSelect = ScaleSelect { scale :: Maybe Scale
@@ -41,8 +42,8 @@ clearSS ss = ss { scale = Nothing
               , availChords = []
               }
 
-makeKeyboard :: Int -> Int -> Keyboard
-makeKeyboard start end = Keyboard start end []
+makeKeyboard :: String -> Int -> Int -> Keyboard
+makeKeyboard n start end = Keyboard start end [] n
 
 keyDown :: Int -> Keyboard -> Keyboard
 keyDown key kbd | key >= firstKey kbd
