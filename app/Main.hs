@@ -2,7 +2,12 @@ import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
 import FRP.Yampa ( Event(..), SF, reactInit, react, loopPre )
 import Control.Concurrent ( threadDelay )
-import Debug.Trace (trace)
+import Control.Monad ( when )
+import Debug.Trace ( trace )
+import System.Directory ( doesFileExist )
+import Data.List.Split ( splitOn )
+import Data.Maybe ( catMaybes )
+import Text.Read ( readMaybe )
 
 import Music
 import Midi
@@ -10,14 +15,46 @@ import UI
 import App
 import AppState
 
-initialState = initState (makeKeyboard 0 83) --21 108) -- 0 83
+parseConfig :: String -> [(String, (Int, Int))]
+parseConfig = catMaybes . map (parseLine . splitOn "|") . lines
+  where
+  parseLine (name:firstKey:lastKey:_) =
+    case (readMaybe firstKey :: Maybe Int, readMaybe lastKey :: Maybe Int) of
+      (Just fk, Just lk) -> Just (name, (fk, lk))
+      _ -> Nothing
+  parseLine _ = Nothing
 
 main :: IO ()
 main = do
-  (handleUI, handleMidi) <- setupYampa exitUI $ loopPre initialState mainSF
-  midi <- setupMidi handleMidi
+  sources <- setupMidi
+  
+  fileExists <- doesFileExist "config.txt"
+  when (not fileExists) $ do
+    writeFile "config.txt" "" -- $ unlines $ map name sources
+
+  config <- readFile "config.txt"
+  let sourceConfigs = map (\s -> (s, lookup (name s) (parseConfig config))) sources
+  let source = case trace ("Midi sources: " ++ (unlines $ map show sourceConfigs)) sourceConfigs of
+                 (s, Just c):_ -> Just (s, c)
+                 _ -> Nothing
+
+  let keyboard = case source of 
+                   Just (s, (fk, lk)) -> makeKeyboard fk lk
+                   _ -> makeKeyboard 0 83
+     
+  (handleUI, handleMidi) <- setupYampa exitUI $ loopPre (initState keyboard) mainSF
+  
+  midiConn <- case source of
+    Just (s, _) -> do
+      c <- connect s handleMidi
+      return $ Just c
+    _ -> return Nothing
+
   setupUI handleUI
-  cleanUpMidi midi
+  
+  case midiConn of
+    Just c -> disconnect c
+    _ -> return ()
 
 setupYampa :: IO () -> SF (Event EventType) (Event (IO Bool)) -> IO (UIAction -> IO (), MidiEvent -> IO ())
 setupYampa exit sf = do
