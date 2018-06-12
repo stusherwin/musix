@@ -17,15 +17,21 @@ import AppState
 import Graphics
 import Music
 
+absoluteWidth = 1920
+absoluteHeight = 1080
+
+black = makeGColor 0.1 0.1 0.1
+white = makeGColor 1 1 1
+red = makeGColor 1 0.2 0.2
+green = makeGColor 0 1 0
+brightBlue = makeGColor 0.2 0.4 1
+blueDark = makeGColor 0.7 0.8 1
+blueDarker = makeGColor 0.2 0.25 0.5
+
 data UIAction = UIKeyDown Char
               | UIKeyUp Char
               | UIRefresh
               | UIReshape Size deriving (Show)
-
-absoluteWidth = 1920
-absoluteHeight = 1080
-absoluteSize = Size absoluteWidth absoluteHeight
-aspectRatio = fromIntegral absoluteWidth / fromIntegral absoluteHeight
 
 initUI :: IO ()
 initUI = do
@@ -55,6 +61,29 @@ handleUiAction state (UIKeyDown '\27') = render state >> return True
 handleUiAction state UIRefresh = render state >> return False
 handleUiAction _ _ = return False
 
+reshape :: Size -> IO ()
+reshape screenSize = do
+  viewport $= viewportSize screenSize absoluteSize
+  matrixMode $= Projection
+  loadIdentity
+  ortho2D 0 (fromIntegral absoluteWidth) (fromIntegral absoluteHeight) 0
+  where
+  absoluteSize = Size absoluteWidth absoluteHeight
+  aspectRatio = fromIntegral absoluteWidth / fromIntegral absoluteHeight
+  viewportSize :: Size -> Size -> (Position, Size)
+  viewportSize (Size screenW screenH) (Size absW absH) =
+    (Position (round x) (round y), Size (round w) (round h))
+    where 
+      screenAspectRatio = fromIntegral screenW / fromIntegral screenH
+      scale = if screenAspectRatio > aspectRatio then
+                fromIntegral screenH / fromIntegral absoluteHeight
+              else
+                fromIntegral screenW / fromIntegral absoluteWidth
+      w = fromIntegral absoluteWidth * scale
+      h = fromIntegral absoluteHeight * scale
+      x = max 0 (fromIntegral screenW - w) / 2
+      y = max 0 (fromIntegral screenH - h) / 2
+
 render :: State -> IO ()
 render state = do
   clearScreen
@@ -63,27 +92,6 @@ render state = do
   --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
   flush
 
-reshape :: Size -> IO ()
-reshape screenSize = do
-  viewport $= viewportSize screenSize absoluteSize
-  matrixMode $= Projection
-  loadIdentity
-  ortho2D 0 (fromIntegral absoluteWidth) (fromIntegral absoluteHeight) 0
-
-viewportSize :: Size -> Size -> (Position, Size)
-viewportSize (Size screenW screenH) (Size absW absH) =
-  (Position (round x) (round y), Size (round w) (round h))
-  where 
-    screenAspectRatio = fromIntegral screenW / fromIntegral screenH
-    scale = if screenAspectRatio > aspectRatio then
-              fromIntegral screenH / fromIntegral absoluteHeight
-            else
-              fromIntegral screenW / fromIntegral absoluteWidth
-    w = fromIntegral absoluteWidth * scale
-    h = fromIntegral absoluteHeight * scale
-    x = max 0 (fromIntegral screenW - w) / 2
-    y = max 0 (fromIntegral screenH - h) / 2
-
 data WhiteKeyType = L
                   | M
                   | R deriving (Show)
@@ -91,86 +99,67 @@ data WhiteKeyType = L
 data Key = Wh WhiteKeyType
          | Bl deriving (Show)
 
-keyboardLayout :: M.Map Int UI.Key
-keyboardLayout = M.fromList $ zip [0..] [ Wh L
-                                        , Bl
-                                        , Wh M
-                                        , Bl
-                                        , Wh R
-                                        , Wh L
-                                        , Bl
-                                        , Wh M
-                                        , Bl
-                                        , Wh M
-                                        , Bl
-                                        , Wh R
-                                        ]
-
-blackKeySize = V2 16 76
-whiteKeySize = V2 26 116
-gap = 2
-
-black = makeGColor 0.1 0.1 0.1
-white = makeGColor 1 1 1
-red = makeGColor 1 0.2 0.2
-green = makeGColor 0 1 0
-brightBlue = makeGColor 0.2 0.4 1
-blueDark = makeGColor 0.7 0.8 1
-blueDarker = makeGColor 0.2 0.25 0.5
-
 drawKeyboard :: Keyboard -> Maybe Scale -> V2 GLfloat -> V2 GLfloat -> IO ()
 drawKeyboard kbd maybeScale origin (V2 w h) = do
-  mapM_ drawKey keyData
-  where
-    keys = take (lastKey kbd - firstKey kbd + 1) . (drop $ firstKey kbd) $ [0..]
-    playing = map (`elem` keysPlaying kbd) $ keys
-    keyData = zip4 keys playing keyTypes allowed
-    keyTypes = map (\k -> keyboardLayout ! (k `mod` 12)) keys
-    allowed = maybe (repeat True) (\s -> map (inScale s . toNote) keys) maybeScale
+  mapM_ drawKey keys
+  where  
+  keys = zip4 keys' playing keyTypes allowed
+    where
+    keys' = take (lastKey kbd - firstKey kbd + 1) . (drop $ firstKey kbd) $ [0..]
+    playing = map (`elem` keysPlaying kbd) $ keys'
+    keyTypes = map (\k -> keyboardLayout ! (k `mod` 12)) keys'
+    allowed = maybe (repeat True) (\s -> map (inScale s . toNote) keys') maybeScale
+    keyboardLayout = M.fromList $ zip [0..] [Wh L, Bl, Wh M, Bl, Wh R, Wh L, Bl, Wh M, Bl, Wh M, Bl, Wh R]
+  
+  noOfWhites key = (noOfWhites' key) - (noOfWhites' $ firstKey kbd)
+    where
     noOfWhites' k = fromIntegral $ ((k `div` 12) * 7) + ([0,1,1,2,2,3,4,4,5,5,6,6] !! (k `mod` 12))
-    noOfWhites key = (noOfWhites' key) - (noOfWhites' $ firstKey kbd)
-    drawKey :: (Int, Bool, UI.Key, Bool) -> IO ()
-    drawKey (key, playing, keyType, allowed) = do
-      case (keyType, (key == firstKey kbd), (key == lastKey kbd)) of
-        (Wh L, _, False) -> drawWhiteKeyLeft
-        (Wh L, _, True) -> drawWhiteKeyFull
-        (Wh M, False, False) -> drawWhiteKeyMiddle
-        (Wh M, True, _) -> drawWhiteKeyLeft
-        (Wh M, _, True) -> drawWhiteKeyRight
-        (Wh R, False, _) -> drawWhiteKeyRight
-        (Wh R, True, _) -> drawWhiteKeyFull
-        (Bl, _, _) -> drawBlackKey
-      where
-        keyboardWidth = ((fromIntegral $ length keys) * 7.0 / 12.0) * (x whiteKeySize + gap)
-        keyboardHeight = y whiteKeySize
-        keyboardScale = V2 (w / keyboardWidth) (h / keyboardHeight)
-        keyColor = case (playing, allowed, keyType, maybeScale) of
-                     (False, True, Wh _, Just _) -> blueDark
-                     (False, True, _, Just _) -> blueDarker
-                     (True, True, Wh _, _) -> brightBlue
-                     (True, True, _, _) -> brightBlue
-                     (True, _, _, _) -> red
-                     (_, _, Wh _, _) -> white
-                     (_, _, _, _) -> black
-        drawWhiteKeyLeft = do
-          drawWhiteBase
-          drawRect' whiteKeyOffset (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
-        drawWhiteKeyMiddle = do
-          drawWhiteBase
-          drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
-        drawWhiteKeyRight = do
-          drawWhiteBase
-          drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize) (y blackKeySize))
-        drawWhiteKeyFull = do
-          drawRect' whiteKeyOffset (V2 0 0) whiteKeySize
-        drawBlackKey = do
-          drawRect' blackKeyOffset (V2 0 0) blackKeySize
-        drawWhiteBase = drawRect' (whiteKeyOffset |+| V2 0 (y blackKeySize)) (V2 0 0) (V2 (x whiteKeySize) (y blackKeyInset))
-        blackKeyInset = V2 ((x blackKeySize + gap) / 2) (y whiteKeySize - y blackKeySize)
-        whiteKeyOffset = V2 (noOfWhites key * (x whiteKeySize + gap)) 0
-        blackKeyOffset = whiteKeyOffset |+| V2 (-(x blackKeyInset)) (-gap)
-        drawRect' offset p1 p2 =
-          drawRect keyColor (origin |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
+  
+  drawKey (key, playing, keyType, allowed) = do
+    case (keyType, (key == firstKey kbd), (key == lastKey kbd)) of
+      (Wh L, _, False) -> drawWhiteKeyLeft
+      (Wh L, _, True) -> drawWhiteKeyFull
+      (Wh M, False, False) -> drawWhiteKeyMiddle
+      (Wh M, True, _) -> drawWhiteKeyLeft
+      (Wh M, _, True) -> drawWhiteKeyRight
+      (Wh R, False, _) -> drawWhiteKeyRight
+      (Wh R, True, _) -> drawWhiteKeyFull
+      (Bl, _, _) -> drawBlackKey
+    where
+    keyColor = case (playing, allowed, keyType, maybeScale) of
+                 (False, True, Wh _, Just _) -> blueDark
+                 (False, True, _, Just _) -> blueDarker
+                 (True, True, Wh _, _) -> brightBlue
+                 (True, True, _, _) -> brightBlue
+                 (True, _, _, _) -> red
+                 (_, _, Wh _, _) -> white
+                 (_, _, _, _) -> black
+    drawWhiteKeyLeft = do
+      drawWhiteBase
+      drawRect' whiteKeyOffset (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
+    drawWhiteKeyMiddle = do
+      drawWhiteBase
+      drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
+    drawWhiteKeyRight = do
+      drawWhiteBase
+      drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize) (y blackKeySize))
+    drawWhiteKeyFull = do
+      drawRect' whiteKeyOffset (V2 0 0) whiteKeySize
+    drawBlackKey = do
+      drawRect' blackKeyOffset (V2 0 0) blackKeySize
+    drawWhiteBase = drawRect' (whiteKeyOffset |+| V2 0 (y blackKeySize)) (V2 0 0) (V2 (x whiteKeySize) (y blackKeyInset))
+    whiteKeyOffset = V2 (noOfWhites key * (x whiteKeySize + gap)) 0
+    blackKeyOffset = whiteKeyOffset |+| V2 (-(x blackKeyInset)) (-gap)
+    drawRect' offset p1 p2 =
+      drawRect keyColor (origin |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
+  
+  blackKeySize = V2 16 76
+  whiteKeySize = V2 26 116
+  gap = 2
+  keyboardWidth = ((fromIntegral $ length keys) * 7.0 / 12.0) * (x whiteKeySize + gap)
+  keyboardHeight = y whiteKeySize
+  keyboardScale = V2 (w / keyboardWidth) (h / keyboardHeight)
+  blackKeyInset = V2 ((x blackKeySize + gap) / 2) (y whiteKeySize - y blackKeySize)
 
 drawUIText :: State -> IO ()
 drawUIText state = do
