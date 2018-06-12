@@ -14,15 +14,9 @@ initialState = initState (makeKeyboard 0 83) --21 108) -- 0 83
 
 main :: IO ()
 main = do
-  initUI
-
-  (handleUI, handleMidi) <- setupYampa exitEventLoop $ loopPre initialState mainSF
-
+  (handleUI, handleMidi) <- setupYampa exitUI $ loopPre initialState mainSF
   midi <- setupMidi handleMidi
   setupUI handleUI
-
-  enterEventLoop
-
   cleanUpMidi midi
 
 setupYampa :: IO () -> SF (Event EventType) (Event (IO Bool)) -> IO (UIAction -> IO (), MidiEvent -> IO ())

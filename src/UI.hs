@@ -2,9 +2,7 @@ module UI (
   UIAction(..),
   setupUI,
   handleUiAction,
-  initUI,
-  enterEventLoop,
-  exitEventLoop
+  exitUI
 ) where
 
 import Graphics.UI.GLUT hiding ( R, scale )
@@ -33,20 +31,14 @@ data UIAction = UIKeyDown Char
               | UIRefresh
               | UIReshape Size deriving (Show)
 
-initUI :: IO ()
-initUI = do
+exitUI :: IO ()
+exitUI = leaveMainLoop
+
+setupUI handler = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
   actionOnWindowClose $= ContinueExecution
   fullScreen
-
-enterEventLoop :: IO ()
-enterEventLoop = mainLoop
-
-exitEventLoop :: IO ()
-exitEventLoop = leaveMainLoop
-
-setupUI handler = do
   idleCallback $= Just (postRedisplay Nothing)
   displayCallback $= handler UIRefresh
   reshapeCallback $= Just (handler . UIReshape)
@@ -54,6 +46,7 @@ setupUI handler = do
       keyboardMouse (Char c) Up _ _ = handler $ UIKeyUp c
       keyboardMouse _ _ _ _ = return ()
   keyboardMouseCallback $= Just keyboardMouse
+  mainLoop
 
 handleUiAction :: State -> UIAction -> IO Bool
 handleUiAction state (UIReshape size) = reshape size >> render state >> return False
