@@ -18,13 +18,18 @@ import Music
 absoluteWidth = 1920
 absoluteHeight = 1080
 
-black = makeGColor 0.1 0.1 0.1
+black = makeGColor 0.25 0.25 0.25
 white = makeGColor 1 1 1
 red = makeGColor 1 0.2 0.2
+redLighter = makeGColor 0.6 0.3 0.3
+redDark = makeGColor 0.5 0.12 0.1
+redDarker = makeGColor 0.5 0.12 0.1
 green = makeGColor 0 1 0
 brightBlue = makeGColor 0.2 0.4 1
 blueDark = makeGColor 0.7 0.8 1
-blueDarker = makeGColor 0.2 0.25 0.5
+blueDarker = makeGColor 0.5 0.6 0.8
+outline = makeGColor 0 0 0
+background = makeGColor 0.1 0.1 0.1
 
 data UIAction = UIKeyDown Char
               | UIKeyUp Char
@@ -79,10 +84,9 @@ reshape screenSize = do
 
 render :: State -> IO ()
 render state = do
-  clearScreen
-  drawKeyboard (keyboard state) (scale $ scaleSelect state) (V2 10 100) 1900
-  drawUIText state
-  --draw (chordMap keyboard) (V2 100 400) (V2 0 0)
+  clearScreen background
+  drawKeyboard state (V2 10 100) 1900
+  drawUIText state (V2 100 400)
   flush
 
 data WhiteKeyType = L
@@ -92,11 +96,13 @@ data WhiteKeyType = L
 data Key = Wh WhiteKeyType
          | Bl deriving (Show)
 
-drawKeyboard :: Keyboard -> Maybe Scale -> V2 GLfloat -> GLfloat -> IO ()
-drawKeyboard kbd maybeScale origin w = do
+drawKeyboard :: State -> V2 GLfloat -> GLfloat -> IO ()
+drawKeyboard state origin w = do
   mapM_ drawKey keys
-  drawText (makeGColor 1 1 1) (origin |+| (V2 10 (-50))) $ deviceName kbd
-  where  
+  drawText white (origin |+| (V2 10 (-50))) $ deviceName kbd
+  where
+  kbd = keyboard state
+  maybeScale = (scale . scaleSelect) state
   keys = zip4 keys' playing keyTypes allowed
     where
     keys' = take (lastKey kbd - firstKey kbd + 1) . (drop $ firstKey kbd) $ [0..]
@@ -120,32 +126,38 @@ drawKeyboard kbd maybeScale origin w = do
       (Wh R, True, _) -> drawWhiteKeyFull
       (Bl, _, _) -> drawBlackKey
     where
-    keyColor = case (playing, allowed, keyType, maybeScale) of
-                 (False, True, Wh _, Just _) -> blueDark
-                 (False, True, _, Just _) -> blueDarker
-                 (True, True, Wh _, _) -> brightBlue
-                 (True, True, _, _) -> brightBlue
-                 (True, _, _, _) -> red
-                 (_, _, Wh _, _) -> white
-                 (_, _, _, _) -> black
+    keyColor = case (playing, allowed, keyType, maybeScale, colourAllowedNotes state) of
+                 (False, True, Wh _, Just _, True) -> blueDarker
+                 (False, True, _, Just _, True) -> blueDarker
+                 (True, True, _, _, _) -> brightBlue
+                 (True, _, _, _, _) -> red
+                 (_, _, Wh _, _, _) -> white
+                 _ -> black
     drawWhiteKeyLeft = do
       drawWhiteBase
-      drawRect' whiteKeyOffset (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
+      drawRect' outline (whiteKeyOffset |+| V2 (-gap) (-gap)) (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize) |+| V2 (gap * 2) gap)
+      drawRect' keyColor whiteKeyOffset (V2 0 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
     drawWhiteKeyMiddle = do
       drawWhiteBase
-      drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
+      drawRect' outline (whiteKeyOffset |+| V2 (-gap) (-gap)) (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize) |+| V2 (gap * 2) gap)
+      drawRect' keyColor whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize - x blackKeyInset) (y blackKeySize))
     drawWhiteKeyRight = do
       drawWhiteBase
-      drawRect' whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize) (y blackKeySize))
+      drawRect' outline (whiteKeyOffset |+| V2 (-gap) (-gap)) (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize) (y blackKeySize) |+| V2 (gap * 2) gap)
+      drawRect' keyColor whiteKeyOffset (V2 (x blackKeyInset) 0) (V2 (x whiteKeySize) (y blackKeySize))
     drawWhiteKeyFull = do
-      drawRect' whiteKeyOffset (V2 0 0) whiteKeySize
+      drawRect' outline (whiteKeyOffset |+| V2 (-gap) (-gap)) (V2 0 0) (whiteKeySize |+| V2 (gap * 2) (gap * 2))
+      drawRect' keyColor whiteKeyOffset (V2 0 0) whiteKeySize
     drawBlackKey = do
-      drawRect' blackKeyOffset (V2 0 0) blackKeySize
-    drawWhiteBase = drawRect' (whiteKeyOffset |+| V2 0 (y blackKeySize)) (V2 0 0) (V2 (x whiteKeySize) (y blackKeyInset))
+      drawRect' outline (blackKeyOffset |+| V2 (-gap) (-gap)) (V2 0 0) (blackKeySize |+| (V2 gap gap |*| 2))
+      drawRect' keyColor blackKeyOffset (V2 0 0) blackKeySize
+    drawWhiteBase = do
+      drawRect' outline (whiteKeyOffset |+| V2 0 (y blackKeySize) |+| V2 (-gap) 0) (V2 0 0) (V2 (x whiteKeySize) (y blackKeyInset) |+| (V2 (gap * 2) gap))
+      drawRect' keyColor (whiteKeyOffset |+| V2 0 (y blackKeySize)) (V2 0 0) (V2 (x whiteKeySize) (y blackKeyInset))
     whiteKeyOffset = V2 (noOfWhites key * (x whiteKeySize + gap)) 0
     blackKeyOffset = whiteKeyOffset |+| V2 (-(x blackKeyInset)) (-gap)
-    drawRect' offset p1 p2 =
-      drawRect keyColor (origin |+| (V2 offsetX 0) |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
+    drawRect' col offset p1 p2 =
+      drawRect col (origin |+| (V2 offsetX 0) |+| (offset |**| keyboardScale)) (p1 |**| keyboardScale) (p2 |**| keyboardScale)
   
   blackKeySize = V2 16 76
   whiteKeySize = V2 26 116
@@ -157,11 +169,11 @@ drawKeyboard kbd maybeScale origin w = do
   keyboardScale = V2 sc sc
   blackKeyInset = V2 ((x blackKeySize + gap) / 2) (y whiteKeySize - y blackKeySize)
 
-drawUIText :: State -> IO ()
-drawUIText state = do
-  drawText (makeGColor 1 1 1) (V2 100 400) $ "Notes: " ++ (intercalate " " $ map show $ notesPlaying $ keyboard state)
-  drawText (makeGColor 1 1 1) (V2 100 450) $ "Chord: " ++ (drawChordText $ scaleSelect state)
-  drawText (makeGColor 1 1 1) (V2 100 500) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
+drawUIText :: State -> V2 GLfloat -> IO ()
+drawUIText state origin = do
+  drawText white origin $ "Notes: " ++ (intercalate " " $ map show $ notesPlaying $ keyboard state)
+  drawText white (origin |+| V2 0 50) $ "Chord: " ++ (drawChordText $ scaleSelect state)
+  drawText white (origin |+| V2 0 100) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
   where
   drawChordText :: ScaleSelect -> String
   drawChordText ScaleSelect { chord = Just sc } = show sc

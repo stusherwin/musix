@@ -21,15 +21,17 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
 
 data State = State { keyboard :: Keyboard
                    , scaleSelect :: ScaleSelect
+                   , colourAllowedNotes :: Bool
                    } deriving (Eq, Show)
 
 initState keyboard = State { keyboard = keyboard
-                           , scaleSelect = ScaleSelect { scale = Nothing
+                           , colourAllowedNotes = False
+                           , scaleSelect = ScaleSelect { scale = Just (Scale Eb Major) --Nothing
                                                        , availScales = []
                                                        , chord = Nothing 
                                                        , availChords = []
                                                        , parsing = False
-                                                       , root = Nothing
+                                                       , root = Just Eb --Nothing
                                                        , actionKey = firstKey keyboard
                                                        }
                            }

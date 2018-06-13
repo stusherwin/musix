@@ -81,5 +81,8 @@ drawText' col (V2 xo yo) text = do
     scale 0.25 0.25 (1::GLfloat)
     renderString Roman text
 
-clearScreen :: IO ()
-clearScreen = clear [ ColorBuffer ]
+clearScreen :: GColor -> IO ()
+clearScreen col = do
+  let (Color3 r g b) = getColor3 col
+  clearColor $= Color4 r g b 0
+  clear [ ColorBuffer ]
