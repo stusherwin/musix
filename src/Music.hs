@@ -1,7 +1,8 @@
 module Music where
 
-import Data.List ( delete, elemIndex, nub, sort, sortOn )
-import Data.Maybe ( fromJust, isJust )
+import Data.List ( delete, elemIndex, nub, sort, sortOn, find )
+import Data.Maybe ( fromJust, isJust, catMaybes )
+import qualified Data.Map as M ( fromList, Map(..), lookup, delete, assocs )
 
 data Note = C | Cs | D | Eb | E | F | Fs | G | Ab | A | Bb | B deriving (Eq, Ord, Enum)
 
@@ -118,10 +119,10 @@ chordNotes (Chord root chordType) = (transposeTo root) . chordNotes' $ chordType
   where
     transposeTo = map . (transpose C)
     chordNotes' Maj = [C]
-    chordNotes' Maj7 = [C, B]
     chordNotes' Dom7 = [C, Bb]
-    chordNotes' Dom7b5 = [C, Fs, Bb]
+    chordNotes' Maj7 = [C, B]
     chordNotes' Min = [C, Eb] 
+    chordNotes' Dom7b5 = [C, Fs, Bb]
     chordNotes' Min7 = [C, Eb, Bb]
     chordNotes' MinMaj7 = [C, Eb, B]
     chordNotes' Min7b5 = [C, Eb, Fs, Bb]
@@ -151,6 +152,73 @@ chordsForRoot root notes = buildChords [] chords
   buildChords bcs (t:cs) = buildChords bcs cs
 
   chords = sortOn ((0-) . length . chordNotes) [Chord root t | t <- [Maj ..]]
+
+--data ChordX = ChordX Note (M.Map Int Alteration)
+data ChordX = ChordX Note MajMinX (Maybe SeventhX) [AltX]
+
+data MajMinX = MajX | MinX
+instance Show MajMinX where
+  show MinX = "m"
+  show _ = ""
+
+data AltX = FlatX Int | SharpX Int
+instance Show AltX where
+  show (FlatX p) = "b" ++ show p
+  show (SharpX p) = "#" ++ show p
+
+data SeventhX = Dom7X | Dom9X | Dom13X | Maj7X
+instance Show SeventhX where
+  show Dom7X = "7"
+  show Dom9X = "9"
+  show Dom13X = "13"
+  show Maj7X = ""
+
+instance Show ChordX where
+  show (ChordX root majMin seventh alts) = (show root) ++ (show majMin) ++ (showSeventh seventh) ++ (concatMap show alts) where
+    showSeventh (Just sth) = show sth
+    showSeventh _ = ""
+
+data Alteration = Flat | Sharp | Natural deriving (Eq, Ord, Show)
+
+chordX :: [Note] -> Maybe ChordX
+chordX [] = Nothing
+chordX ns@(root:_) = Just $ toChord (M.fromList $ alterations (delete root $ nub ns)) where
+  toChord :: M.Map Int Alteration -> ChordX
+  toChord alts = ChordX root majMin seventh alts' where
+    majMin | M.lookup 3 alts == Just Flat = MinX
+           | otherwise = MajX
+
+    seventh | M.lookup 7 alts == Just Natural = Just Maj7X
+            | M.lookup 7 alts == Just Flat && M.lookup 13 alts == Just Natural = Just Dom13X
+            | M.lookup 7 alts == Just Flat && M.lookup 9 alts == Just Natural = Just Dom9X
+            | M.lookup 7 alts == Just Flat = Just Dom7X
+            | otherwise = Nothing
+    
+    alts' = catMaybes $ map (\(p, a) -> case a of
+                                          Flat -> Just $ FlatX p
+                                          Sharp -> Just $ SharpX p) $ sortOn snd $ filter ((/= Natural) . snd) $ filter (\(p, _) -> p /= 3 && p /= 7) (M.assocs alts)
+
+  note :: (Int, Alteration) -> Note
+  note (pos, alt) = let n = (scaleNotes (Scale root Major)) !! ((pos - 1) `mod` 7)
+                    in case alt of
+                         Flat -> transposeBy (-1) n
+                         Sharp -> transposeBy 1 n
+                         _ -> n
+
+  alterations :: [Note] -> [(Int, Alteration)]
+  alterations ns = alts ns [] [ (3, Natural), (5, Natural), (7, Natural), (9, Natural), (11, Natural), (13, Natural)
+                              , (3, Flat), (5, Sharp), (7, Flat), (9, Flat), (9, Sharp), (11, Sharp), (5, Flat), (13, Flat)]
+    
+  alts :: [Note] -> [(Int, Alteration)] -> [(Int, Alteration)] -> [(Int, Alteration)]
+  alts [] as _ = as
+  alts _ as [] = as
+  alts ns as (p:pos) = let (ns', as') = findAlt ns as p
+                       in alts ns' as' pos
+    
+  findAlt :: [Note] -> [(Int, Alteration)] -> (Int, Alteration) -> ([Note], [(Int, Alteration)])
+  findAlt ns as p = case (find (== (note p)) ns, any ((== (fst p)) . fst) as) of
+                      (Just n, False) -> (delete n ns, p:as)
+                      _ -> (ns, as)
 
 neighbours :: Scale -> Int -> [Scale]
 neighbours scale dist =
