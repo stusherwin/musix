@@ -26,36 +26,40 @@ parseConfig = catMaybes . map (parseLine . splitOn "|") . lines
 
 main :: IO ()
 main = do
-  sources <- setupMidi
+  -- sources <- setupMidi
   
-  fileExists <- doesFileExist "config.txt"
-  when (not fileExists) $ do
-    writeFile "config.txt" "" -- $ unlines $ map name sources
+  -- fileExists <- doesFileExist "config.txt"
+  -- when (not fileExists) $ do
+  --   writeFile "config.txt" "" -- $ unlines $ map name sources
 
-  config <- readFile "config.txt"
-  let sourceConfigs = map (\s -> (s, lookup (name s) (parseConfig config))) sources
-  let source = case trace ("Midi sources: " ++ (unlines $ map show sourceConfigs)) sourceConfigs of
-                 (s, Just c):_ -> Just (s, c)
-                 _ -> Nothing
+  -- config <- readFile "config.txt"
+  -- let sourceConfigs = map (\s -> (s, lookup (name s) (parseConfig config))) sources
+  -- let source = case trace ("Midi sources: " ++ (unlines $ map show sourceConfigs)) sourceConfigs of
+  --                (s, Just c):_ -> Just (s, c)
+  --                _ -> Nothing
 
-  let keyboard = case source of 
-                   Just (s, (fk, lk)) -> makeKeyboard (name s) fk lk
-                   _ -> makeKeyboard "Virtual Keyboard" 0 83
-     
-  (handleUI, handleMidi) <- setupYampa exitUI $ loopPre (initState keyboard) mainSF
-  forkIO (timer handleMidi)
+  let keyboard = makeKeyboard "Virtual Keyboard" 0 83 --case source of 
+                  --  Just (s, (fk, lk)) -> makeKeyboard (name s) fk lk
+                  --  _ -> makeKeyboard "Virtual Keyboard" 0 83
+  midi <- setupMidi
+  (handleUI, handleMidi, handleMidiConnection) <- setupYampa exitUI $ loopPre (initState keyboard midi) mainSF
+
+  setupMidiEventHandler midi handleMidi
+  listenForMidiConnections handleMidiConnection
   
-  midiConn <- case source of
-    Just (s, _) -> do
-      c <- connect s handleMidi
-      return $ Just c
-    _ -> return Nothing
+  -- midiConn <- case source of
+  --   Just (s, _) -> do
+  --     c <- connect s handleMidi
+  --     return $ Just c
+  --   _ -> return Nothing
 
   setupUI handleUI
+  startUI
+  closeExistingConnection midi
   
-  case midiConn of
-    Just c -> disconnect c
-    _ -> return ()
+  -- case midiConn of
+  --   Just c -> disconnect c
+  --   _ -> return ()
   where
   timer :: (MidiEvent -> IO()) -> IO ()
   timer midi = do
@@ -66,7 +70,7 @@ main = do
     timer midi
 
 
-setupYampa :: IO () -> SF (Event EventType) (Event (IO Bool)) -> IO (UIEvent -> IO (), MidiEvent -> IO ())
+setupYampa :: IO () -> SF (Event EventType) (Event (IO Bool)) -> IO (UIEvent -> IO (), MidiEvent -> IO (), MidiConnectionEvent -> IO ())
 setupYampa exit sf = do
   timeRef <- newIORef (0.0 :: POSIXTime)
   let init = return NoEvent
@@ -86,5 +90,6 @@ setupYampa exit sf = do
           then exit
         else return ()
 
-  return ( \uiAction -> react' $ Event (UI uiAction),
-           \midiEvent -> react' $ Event (Midi midiEvent ) )
+  return ( \e -> react' $ Event (UI e),
+           \e -> react' $ Event (Midi e),
+           \e -> trace (show e ) $ react' $ Event (MidiConnection e) )

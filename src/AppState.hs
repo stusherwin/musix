@@ -2,6 +2,7 @@ module AppState where
 
 import Data.List ( delete, sort )
 
+import Midi
 import Music
 
 data Keyboard = Keyboard { firstKey :: Int
@@ -20,21 +21,23 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                } deriving (Eq, Show)
 
 data State = State { keyboard :: Keyboard
+                   , midiState :: MidiState
                    , scaleSelect :: ScaleSelect
                    , colourAllowedNotes :: Bool
-                   } deriving (Eq, Show)
+                   }
 
-initState keyboard = State { keyboard = keyboard
-                           , colourAllowedNotes = False
-                           , scaleSelect = ScaleSelect { scale = Just (Scale Eb Major) --Nothing
-                                                       , availScales = []
-                                                       , chord = Nothing 
-                                                       , availChords = []
-                                                       , parsing = False
-                                                       , root = Just Eb --Nothing
-                                                       , actionKey = firstKey keyboard
-                                                       }
-                           }
+initState keyboard midi = State { keyboard = keyboard
+                                , midiState = midi
+                                , colourAllowedNotes = False
+                                , scaleSelect = ScaleSelect { scale = Just (Scale Eb Major) --Nothing
+                                                            , availScales = []
+                                                            , chord = Nothing 
+                                                            , availChords = []
+                                                            , parsing = False
+                                                            , root = Just Eb --Nothing
+                                                            , actionKey = firstKey keyboard
+                                                            }
+                                }
 
 clearSS :: ScaleSelect -> ScaleSelect
 clearSS ss = ss { scale = Nothing

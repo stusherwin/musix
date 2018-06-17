@@ -3,6 +3,7 @@ module UI (
   UIAction(..),
   setupUI,
   handleUIAction,
+  startUI,
   exitUI
 ) where
 
@@ -44,6 +45,9 @@ data UIAction = UIRefresh
 exitUI :: IO ()
 exitUI = leaveMainLoop
 
+startUI :: IO ()
+startUI = mainLoop
+
 setupUI handler = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
@@ -56,7 +60,6 @@ setupUI handler = do
       keyboardMouse (Char c) Up _ _ = handler $ UIKeyUp c
       keyboardMouse _ _ _ _ = return ()
   keyboardMouseCallback $= Just keyboardMouse
-  mainLoop
 
 handleUIAction :: State -> UIAction -> IO Bool
 handleUIAction state UIRefresh = render state >> return False

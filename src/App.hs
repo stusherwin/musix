@@ -3,7 +3,7 @@
 module App where
 
 import Control.Arrow ( returnA )
-import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent )
+import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
@@ -14,7 +14,8 @@ import Music
 import UI
 
 data EventType = UI UIEvent
-               | Midi MidiEvent deriving (Show) 
+               | Midi MidiEvent 
+               | MidiConnection MidiConnectionEvent deriving (Show) 
 
 getUIEvent :: EventType -> Maybe UIEvent
 getUIEvent (UI e) = Just e
@@ -24,22 +25,33 @@ getMidiEvent :: EventType -> Maybe MidiEvent
 getMidiEvent (Midi m) = Just m
 getMidiEvent _ = Nothing
 
+getMidiConnectionEvent :: EventType -> Maybe MidiConnectionEvent
+getMidiConnectionEvent (MidiConnection m) = Just m
+getMidiConnectionEvent _ = Nothing
+
 mainSF :: SF (Event EventType, State) (Event (IO Bool), State)
 mainSF = proc (event, state) -> do
-  let uiE = (mapFilterE getUIEvent) event
+  let uiE = mapFilterE getUIEvent $ event
+  let midiConnE = mapFilterE getMidiConnectionEvent $ event
+
   vmidi <- virtualMidi -< uiE
-  uiA <- uiAction -< uiE
   let midiE = rMerge vmidi (mapFilterE getMidiEvent $ event)
+
+  midiState' <- updateSources -< (midiConnE, midiState state)
   keyboard' <- pressKey -< (midiE, keyboard state)
   scaleSelect' <- changeScale -< (keyboard', scaleSelect state, midiE)
 
   let state' = state { keyboard = keyboard'
                      , scaleSelect = scaleSelect'
+                     , midiState = midiState'
                      }
+  midiA <- midiAction -< midiConnE
+  uiA <- uiAction -< uiE
 
-  let io = handleUIAction state' <$> uiA
+  let uiIO = handleUIAction state' <$> uiA
+  let midiIO = handleMidiAction midiState' <$> midiA
 
-  returnA -< (io, state')
+  returnA -< (mergeBy (>>) midiIO uiIO, state')
 
 virtualMidi :: SF (Event UIEvent) (Event MidiEvent)
 virtualMidi = proc e -> do
@@ -52,12 +64,24 @@ virtualMidi = proc e -> do
             'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u']
     findNote c = c `elemIndex` keys
 
+updateSources :: SF (Event MidiConnectionEvent, MidiState) MidiState
+updateSources = proc (e, s) -> do
+  returnA -< case e of
+    Event (MidiConnectionsChanged srcs) -> updateMidiSources s srcs
+    _ -> s
+
 uiAction :: SF (Event UIEvent) (Event UIAction)
 uiAction = proc e -> do
   returnA -< case e of
     Event (UIKeyDown '\27') -> Event $ UIExit
     Event UIRequestRefresh -> Event $ UIRefresh
     Event (UIRequestReshape size) -> Event $ UIReshape size
+    _ -> NoEvent
+
+midiAction :: SF (Event MidiConnectionEvent) (Event MidiAction)
+midiAction = proc e -> do
+  returnA -< case e of
+    Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ index s
     _ -> NoEvent
 
 pressKey :: SF (Event MidiEvent, Keyboard) Keyboard
