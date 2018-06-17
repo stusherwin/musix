@@ -4,7 +4,7 @@ module App where
 
 import Control.Arrow ( returnA )
 import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy )
-import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub )
+import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub, deleteBy )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
 
@@ -68,6 +68,12 @@ updateSources :: SF (Event MidiConnectionEvent, MidiState) MidiState
 updateSources = proc (e, s) -> do
   returnA -< case e of
     Event (MidiConnectionsChanged srcs) -> updateMidiSources s srcs
+    Event (MidiConnected i) -> let srcs = sources s
+                                   maybeSrc = find (\s -> index s == i) srcs
+                                   srcs' = case maybeSrc of
+                                             Just src -> src { connected = True } : (deleteBy (\a b -> index a == index b) src srcs)
+                                             _ -> srcs
+                               in updateMidiSources s srcs'
     _ -> s
 
 uiAction :: SF (Event UIEvent) (Event UIAction)

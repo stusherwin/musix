@@ -15,9 +15,11 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Graphics, Music, Midi, UI, App, AppState
+  exposed-modules:     Graphics, Music, Midi, UI, App, AppState, Config
   build-depends:       base >= 4.7 && < 5
                      , containers >= 0.5
+                     , directory >= 1.3
+                     , split >= 0.2
                      , hmidi >= 0.2
                      , GLUT >= 2.7
                      , Yampa >= 0.10
@@ -34,8 +36,6 @@ executable musix
                      , Yampa >= 0.10
                      , hmidi >= 0.2
                      , time >= 1.9
-                     , directory >= 1.3
-                     , split >= 0.2
   default-language:    Haskell2010
 
 test-suite musix-test

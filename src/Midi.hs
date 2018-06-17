@@ -3,13 +3,11 @@ module Midi (
   MidiEvent(..),
   MidiConnectionEvent(..),
   MidiAction(..),
-  MidiSource(index, name, model, manufacturer),
+  MidiSource(index, name, model, manufacturer, connected),
   MidiState(sources),
   setupMidi,
   setupMidiEventHandler,
   updateMidiSources,
-  --connect,
-  --disconnect,
   handleMidiAction,
   listenForMidiConnections,
   closeExistingConnection
@@ -29,15 +27,20 @@ data MidiEvent = NoteOn Int
 data MidiAction = Connect Int
                 | Disconnect Int deriving (Show)
 
-data MidiConnectionEvent = MidiConnectionsChanged [MidiSource] deriving (Show)
+data MidiConnectionEvent = MidiConnectionsChanged [MidiSource]
+                         | MidiConnected Int deriving (Show)
 
-newtype MidiConnection = MidiConnection { getConn :: Maybe Connection } 
+data MidiConnection = MidiConnection { conn :: Connection
+                                     , sourceIndex :: Int
+                                     , justConnected :: Bool
+                                     } 
 
 data MidiSource = MidiSource { index :: Int
                              , name :: String
                              , model :: String
                              , manufacturer :: String
                              , source :: Source
+                             , connected :: Bool
                              } deriving (Show)
 
 data MidiState = MidiState { sources :: [MidiSource]
@@ -66,20 +69,28 @@ setupMidiEventHandler state handler = do
 updateMidiSources :: MidiState -> [MidiSource] -> MidiState
 updateMidiSources s srcs = s { sources = srcs }
 
-listenForMidiConnections :: (MidiConnectionEvent -> IO()) -> IO ()
-listenForMidiConnections handler = do
+listenForMidiConnections :: MidiState -> (MidiConnectionEvent -> IO()) -> IO ()
+listenForMidiConnections state handler = do
   srcCountRef <- newIORef (0 :: Int)
-  _ <- trace "Listening..." $ forkIO $ loop srcCountRef
+  let connRef = connection state
+  _ <- forkIO $ loop srcCountRef connRef
   return ()
   where
-  loop srcCountRef = do
-    threadDelay 1000000
-    srcCount <- readIORef srcCountRef
-    srcs <- getSources
-    when (srcCount /= length srcs) $ do
-      writeIORef srcCountRef (length srcs)
-      handler $ MidiConnectionsChanged srcs
-    loop srcCountRef
+  loop srcCountRef connRef = do
+    threadDelay 1000
+    maybeC <- readIORef connRef
+    case maybeC of
+      Just c@MidiConnection { justConnected = True } -> do
+        writeIORef connRef $ Just c { justConnected = False }
+        handler $ MidiConnected ( sourceIndex  c)
+        loop srcCountRef connRef
+      _ -> do      
+        srcCount <- readIORef srcCountRef
+        srcs <- getSources
+        when (srcCount /= length srcs) $ do
+          writeIORef srcCountRef (length srcs)
+          handler $ MidiConnectionsChanged srcs
+        loop srcCountRef connRef
 
 getSources :: IO [MidiSource]
 getSources = do
@@ -88,41 +99,41 @@ getSources = do
     n <- getName s
     m <- getModel s
     mf <- getManufacturer s
-    return $ MidiSource i n m mf s
+    return $ MidiSource i n m mf s False
 
 handleMidiAction :: MidiState -> MidiAction -> IO Bool
 handleMidiAction state (Connect i) = do
   let maybeSrc = trace ((show i) ++ (show $ sources state)) $ find ((== i) . index) (sources state)
   case maybeSrc of
-    Just src -> trace "got Src" $ do
+    Just src -> do
       closeExistingConnection state
       maybeH <- readIORef (midiEventHandler state)
       case maybeH of
-        Just h -> trace "got h" $ do
-          c' <- trace "connecting..." $ connect src h
-          trace "done." $ writeIORef (connection state) (Just c')
+        Just h -> do
+          c' <- connect src h
+          writeIORef (connection state) (Just c')
           return False
-        _ -> return $ trace "no h" $ False
-    _ -> return $ trace "no Src" $ False
+        _ -> return False
+    _ -> return False
 handleMidiAction _ _ = return False
 
 closeExistingConnection :: MidiState -> IO ()
 closeExistingConnection state = do
-  maybeC <- readIORef (connection state)
+  let connRef = connection state
+  maybeC <- readIORef connRef
   case maybeC of
-    Just c -> trace "disconnecting..." $ disconnect c
-    _ -> trace "no c" $ return ()
-  
-  
+    Just c -> do
+      disconnect c
+      writeIORef connRef Nothing
+    _ -> return ()
+    
 connect :: MidiSource -> (MidiEvent -> IO ()) -> IO MidiConnection
 connect src handler = do
-    c <- openSource (source src) $ Just $ makeHandler handler
-    start c
-    return MidiConnection { getConn = Just c }
+  c <- openSource (source src) $ Just $ makeHandler handler
+  start c
+  return $ MidiConnection c (index src) True
 
 disconnect :: MidiConnection -> IO ()
-disconnect midi = case getConn midi of
-                     (Just c) -> do
-                       stop c
-                       close c
-                     _ -> return ()
+disconnect midi = do
+  stop (conn midi)
+  close (conn midi)

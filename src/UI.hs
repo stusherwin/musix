@@ -11,11 +11,12 @@ import Graphics.UI.GLUT hiding ( R, scale )
 import qualified Graphics.UI.GLUT as GL ( scale )
 import qualified Data.Map.Lazy as M
 import Data.Map.Lazy ((!))
-import Data.List ( zip4, intercalate )
+import Data.List ( zip4, intercalate, find )
 
 import AppState
 import Graphics
 import Music
+import Midi
 
 absoluteWidth = 1920
 absoluteHeight = 1080
@@ -92,6 +93,7 @@ reshape screenSize = do
 render :: State -> IO ()
 render state = do
   clearScreen background
+  drawMidiDevice state (V2 20 50)
   drawKeyboard state (V2 10 100) 1900
   drawUIText state (V2 100 400)
   flush
@@ -103,10 +105,14 @@ data WhiteKeyType = L
 data Key = Wh WhiteKeyType
          | Bl deriving (Show)
 
+drawMidiDevice :: State -> V2 GLfloat -> IO ()
+drawMidiDevice state origin = do
+  let deviceName = maybe "No Midi device connected " name $ find connected $ (sources . midiState) state
+  drawText white origin deviceName
+
 drawKeyboard :: State -> V2 GLfloat -> GLfloat -> IO ()
 drawKeyboard state origin w = do
   mapM_ drawKey keys
-  drawText white (origin |+| (V2 10 (-50))) $ deviceName kbd
   where
   kbd = keyboard state
   maybeScale = (scale . scaleSelect) state
