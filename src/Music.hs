@@ -153,7 +153,6 @@ chordsForRoot root notes = buildChords [] chords
 
   chords = sortOn ((0-) . length . chordNotes) [Chord root t | t <- [Maj ..]]
 
---data ChordX = ChordX Note (M.Map Int Alteration)
 data ChordX = ChordX Note MajMinX (Maybe SeventhX) [AltX]
 
 data MajMinX = MajX | MinX
@@ -171,7 +170,7 @@ instance Show SeventhX where
   show Dom7X = "7"
   show Dom9X = "9"
   show Dom13X = "13"
-  show Maj7X = ""
+  show Maj7X = "M7"
 
 instance Show ChordX where
   show (ChordX root majMin seventh alts) = (show root) ++ (show majMin) ++ (showSeventh seventh) ++ (concatMap show alts) where

@@ -1,7 +1,8 @@
 module UI (
+  UIEvent(..),
   UIAction(..),
   setupUI,
-  handleUiAction,
+  handleUIAction,
   exitUI
 ) where
 
@@ -31,10 +32,14 @@ blueDarker = makeGColor 0.5 0.6 0.8
 outline = makeGColor 0 0 0
 background = makeGColor 0.1 0.1 0.1
 
-data UIAction = UIKeyDown Char
-              | UIKeyUp Char
-              | UIRefresh
-              | UIReshape Size deriving (Show)
+data UIEvent = UIKeyDown Char
+             | UIKeyUp Char
+             | UIRequestRefresh
+             | UIRequestReshape Size deriving (Show)
+
+data UIAction = UIRefresh
+              | UIReshape Size
+              | UIExit deriving (Show)
 
 exitUI :: IO ()
 exitUI = leaveMainLoop
@@ -45,19 +50,18 @@ setupUI handler = do
   actionOnWindowClose $= ContinueExecution
   fullScreen
   idleCallback $= Just (postRedisplay Nothing)
-  displayCallback $= handler UIRefresh
-  reshapeCallback $= Just (handler . UIReshape)
+  displayCallback $= handler UIRequestRefresh
+  reshapeCallback $= Just (handler . UIRequestReshape)
   let keyboardMouse (Char c) Down _ _ = handler $ UIKeyDown c
       keyboardMouse (Char c) Up _ _ = handler $ UIKeyUp c
       keyboardMouse _ _ _ _ = return ()
   keyboardMouseCallback $= Just keyboardMouse
   mainLoop
 
-handleUiAction :: State -> UIAction -> IO Bool
-handleUiAction state (UIReshape size) = reshape size >> render state >> return False
-handleUiAction state (UIKeyDown '\27') = render state >> return True
-handleUiAction state UIRefresh = render state >> return False
-handleUiAction _ _ = return False
+handleUIAction :: State -> UIAction -> IO Bool
+handleUIAction state UIRefresh = render state >> return False
+handleUIAction state (UIReshape size) = reshape size >> render state >> return False
+handleUIAction state UIExit = render state >> return True
 
 reshape :: Size -> IO ()
 reshape screenSize = do
