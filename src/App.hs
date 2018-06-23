@@ -29,27 +29,27 @@ getMidiConnectionEvent :: EventType -> Maybe MidiConnectionEvent
 getMidiConnectionEvent (MidiConnection m) = Just m
 getMidiConnectionEvent _ = Nothing
 
-mainSF :: SF (Event EventType, State) (Event (IO Bool), State)
-mainSF = proc (event, state) -> do
+mainSF :: Midi -> SF (Event EventType, State) (Event (IO Bool), State)
+mainSF midi = proc (event, state) -> do
   let uiE = mapFilterE getUIEvent $ event
   let midiConnE = mapFilterE getMidiConnectionEvent $ event
 
   vmidi <- virtualMidi -< uiE
   let midiE = rMerge vmidi (mapFilterE getMidiEvent $ event)
 
-  midiState' <- updateSources -< (midiConnE, midiState state)
+  midiSources' <- updateSources -< (midiConnE, midiSources state)
   keyboard' <- pressKey -< (midiE, keyboard state)
   scaleSelect' <- changeScale -< (keyboard', scaleSelect state, midiE)
 
   let state' = state { keyboard = keyboard'
                      , scaleSelect = scaleSelect'
-                     , midiState = midiState'
+                     , midiSources = midiSources'
                      }
   midiA <- midiAction -< midiConnE
   uiA <- uiAction -< uiE
 
   let uiIO = handleUIAction state' <$> uiA
-  let midiIO = handleMidiAction midiState' <$> midiA
+  let midiIO = handleMidiAction midi <$> midiA
 
   returnA -< (mergeBy (>>) midiIO uiIO, state')
 
@@ -64,17 +64,15 @@ virtualMidi = proc e -> do
             'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u']
     findNote c = c `elemIndex` keys
 
-updateSources :: SF (Event MidiConnectionEvent, MidiState) MidiState
-updateSources = proc (e, s) -> do
+updateSources :: SF (Event MidiConnectionEvent, [MidiSourceInfo]) [MidiSourceInfo]
+updateSources = proc (e, sis) -> do
   returnA -< case e of
-    Event (MidiConnectionsChanged srcs) -> updateMidiSources s srcs
-    Event (MidiConnected i) -> let srcs = sources s
-                                   maybeSrc = find (\s -> index s == i) srcs
-                                   srcs' = case maybeSrc of
-                                             Just src -> src { connected = True } : (deleteBy (\a b -> index a == index b) src srcs)
-                                             _ -> srcs
-                               in updateMidiSources s srcs'
-    _ -> s
+    Event (MidiConnectionsChanged srcs) -> srcs
+    Event (MidiConnected i) -> let maybeSi = find (\s -> index s == i) sis
+                               in  case maybeSi of
+                                     Just si -> si { connected = True } : (deleteBy (\a b -> index a == index b) si sis)
+                                     _ -> sis
+    _ -> sis
 
 uiAction :: SF (Event UIEvent) (Event UIAction)
 uiAction = proc e -> do
@@ -87,7 +85,7 @@ uiAction = proc e -> do
 midiAction :: SF (Event MidiConnectionEvent) (Event MidiAction)
 midiAction = proc e -> do
   returnA -< case e of
-    Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ index s
+    Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ Midi.index s
     _ -> NoEvent
 
 pressKey :: SF (Event MidiEvent, Keyboard) Keyboard

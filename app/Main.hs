@@ -19,14 +19,11 @@ main = do
                   --  Just (s, (fk, lk)) -> makeKeyboard (name s) fk lk
                   --  _ -> makeKeyboard "Virtual Keyboard" 0 83
   midi <- setupMidi
-  (handleUI, handleMidi, handleMidiConnection) <- setupYampa exitUI $ loopPre (initState keyboard midi) mainSF
-
-  setupMidiEventHandler midi handleMidi
-  listenForMidiConnections midi handleMidiConnection
-  
+  (handleUI, handleMidiEvent, handleMidiConnection) <- setupYampa exitUI $ loopPre (initState keyboard) (mainSF midi)
+  startListening midi handleMidiConnection handleMidiEvent
   setupUI handleUI
   startUI
-  closeExistingConnection midi
+  closeMidi midi
   
 setupYampa :: IO () -> SF (Event EventType) (Event (IO Bool)) -> IO (UIEvent -> IO (), MidiEvent -> IO (), MidiConnectionEvent -> IO ())
 setupYampa exit sf = do
@@ -50,4 +47,4 @@ setupYampa exit sf = do
 
   return ( \e -> react' $ Event (UI e),
            \e -> react' $ Event (Midi e),
-           \e -> trace (show e ) $ react' $ Event (MidiConnection e) )
+           \e -> react' $ Event (MidiConnection e) )

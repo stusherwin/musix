@@ -107,7 +107,7 @@ data Key = Wh WhiteKeyType
 
 drawMidiDevice :: State -> V2 GLfloat -> IO ()
 drawMidiDevice state origin = do
-  let deviceName = maybe "No Midi device connected " name $ find connected $ (sources . midiState) state
+  let deviceName = maybe "No Midi device connected " name $ find connected $ midiSources state
   drawText white origin deviceName
 
 drawKeyboard :: State -> V2 GLfloat -> GLfloat -> IO ()
