@@ -3,7 +3,7 @@
 module App where
 
 import Control.Arrow ( returnA )
-import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge )
+import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge, DTime(..) )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub, deleteBy )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
@@ -113,7 +113,7 @@ changeScale :: SF (Event [Int], ScaleSelect) ScaleSelect
 changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
   detectParsingState :: SF (Event [Int], ScaleSelect) (Event (SF (Event [Int], ScaleSelect) ScaleSelect))
   detectParsingState = proc (keys, ss) -> do
-    parseTrigger <- lastNBlocksPlayedSame 3 -< keys
+    parseTrigger <- lastNBlocksPlayedSameWithin 3 0.5 -< keys
 
     returnA -< case (parseTrigger, ss, keys) of
       (Event _, ScaleSelect { parsing = False }, Event _)    -> Event $ startParsing ss
@@ -164,8 +164,8 @@ changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
                               _ -> Nothing
                   }
 
-lastNBlocksPlayedSame :: Int -> SF (Event [Int]) (Event ())
-lastNBlocksPlayedSame n = findLastPlayedBlock >>> compareLastNBlocks n >>> edge
+lastNBlocksPlayedSameWithin :: Int -> DTime -> SF (Event [Int]) (Event ())
+lastNBlocksPlayedSameWithin n t = findLastPlayedBlock >>> compareLastNBlocksWithin n t >>> edge
   where
   findLastPlayedBlock :: SF (Event [Int]) (Event [Int])
   findLastPlayedBlock = sscanPrim fn ([], [], True) NoEvent where
@@ -181,3 +181,15 @@ lastNBlocksPlayedSame n = findLastPlayedBlock >>> compareLastNBlocks n >>> edge
     fn bs (Event b2) | all (== b2) bs = Just ((replicate (n - 1) []), True)
     fn bs (Event b2) = Just (take (n - 1) (b2:bs), False)
     fn bs _ = Just (bs, False)
+
+  compareLastNBlocksWithin :: Int -> DTime -> SF (Event [Int]) Bool
+  compareLastNBlocksWithin n totalTime = iterFrom fn ([], False) >>> arr snd where
+    fn :: Event [Int] -> Event [Int] -> DTime -> ([([Int], DTime)], Bool) -> ([([Int], DTime)], Bool)
+    fn _ (Event bs) t (xs, _) = let xs' = take (n - 1) xs
+                                in if length xs' == n - 1
+                                      && all ((== bs) . fst) xs'
+                                      && t + sum (map snd xs') < totalTime
+                                   then ([], True)
+                                   else ((bs, t):xs', False)
+    fn _ _ t1 (((bs, t0):xs), _) = ((bs, t0+t1):xs, False)
+    fn _ _ _ (xs, _) = (xs, False)
