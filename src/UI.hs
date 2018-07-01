@@ -53,7 +53,7 @@ setupUI handler = do
   (_progname, _) <- getArgsAndInitialize
   _window <- createWindow "Musix"
   actionOnWindowClose $= ContinueExecution
-  -- fullScreen
+  fullScreen
   idleCallback $= Just (postRedisplay Nothing)
   displayCallback $= handler UIRequestRefresh
   reshapeCallback $= Just (handler . UIRequestReshape)
@@ -187,8 +187,6 @@ drawUIText state origin = do
   drawText white origin $ "Notes: " ++ (intercalate " " $ map show $ notesPlaying $ keyboard state)
   drawText white (origin |+| V2 0 50) $ "Chord: " ++ (drawChordText $ scaleSelect state)
   drawText white (origin |+| V2 0 100) $ "Scale: " ++ (drawScaleText $ scaleSelect state)
-  drawText white (origin |+| V2 0 150) $ "Last block: " ++ (intercalate " " $ map (show . toNote) $ lastPlayedBlock state)
-  drawText white (origin |+| V2 0 200) $ "Last 2 blocks same: " ++ (show $ lastTwoBlocksSame state)
   where
   drawChordText :: ScaleSelect -> String
   drawChordText ScaleSelect { chord = Just sc } = show sc

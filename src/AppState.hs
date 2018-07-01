@@ -16,15 +16,12 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , availChords :: [Chord]
                                , parsing :: Bool
                                , root :: Maybe Note
-                               , actionKey :: Int
                                } deriving (Eq, Show)
 
 data State = State { keyboard :: Keyboard
                    , midiSources :: [MidiSourceInfo]
                    , scaleSelect :: ScaleSelect
                    , colourAllowedNotes :: Bool
-                   , lastPlayedBlock :: [Int]
-                   , lastTwoBlocksSame :: Bool
                    } deriving (Eq, Show)
 
 initState keyboard = State { keyboard = keyboard
@@ -36,10 +33,7 @@ initState keyboard = State { keyboard = keyboard
                                                        , availChords = []
                                                        , parsing = False
                                                        , root = Just Eb --Nothing
-                                                       , actionKey = firstKey keyboard
                                                        }
-                           , lastPlayedBlock = []
-                           , lastTwoBlocksSame = False
                            }
 
 clearSS :: ScaleSelect -> ScaleSelect
