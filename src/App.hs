@@ -3,10 +3,11 @@
 module App where
 
 import Control.Arrow ( returnA )
-import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold )
+import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub, deleteBy )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
+import Debug.Trace ( trace )
 
 import AppState
 import Midi
@@ -48,17 +49,36 @@ mainSF midi = proc input -> do
 
     midiSources' <- updateSources -< (midiConnE, midiSources state)
     keyboard' <- pressKey -< (keys', keyboard state)
-    scaleSelect' <- changeScale -< (keyboard', scaleSelect state, midiE)
+    scaleSelect' <- changeScale -< (keys', scaleSelect state)
+    lastPlayedBlockEv' <- findLastPlayedBlock -< keys'
+    lastTwoBlocksSame' <- compareLastTwoBlocks -< lastPlayedBlockEv'
+    lastPlayedBlock' <- hold [] -< lastPlayedBlockEv'
   
     let state' = state { keyboard = keyboard'
                        , scaleSelect = scaleSelect'
                        , midiSources = midiSources'
+                       , lastPlayedBlock = lastPlayedBlock'
+                       , lastTwoBlocksSame = lastTwoBlocksSame'
                        }
   
     let uiIO = handleUIAction state' <$> uiA
     let midiIO = handleMidiAction midi <$> midiA
   
     returnA -< ((mergeBy (>>) midiIO uiIO, state'), keys')
+
+findLastPlayedBlock :: SF (Event [Int]) (Event [Int])
+findLastPlayedBlock = sscanPrim fn ([], [], True) NoEvent where
+  fn :: ([Int], [Int], Bool) -> Event [Int] -> Maybe (([Int], [Int], Bool), Event [Int])
+  fn (lastBlock, ns, True) (Event ns') | length ns' > length ns = Just ((lastBlock, ns', True), NoEvent)
+  fn (_, ns, True) (Event ns') | length ns' < length ns = Just ((ns, ns', False), Event ns)
+  fn (lastBlock, _, False) (Event []) = Just ((lastBlock, [], True), NoEvent)
+  fn (lastBlock, ns, b) _ = Just ((lastBlock, ns, b), NoEvent)
+
+compareLastTwoBlocks :: SF (Event [Int]) Bool
+compareLastTwoBlocks = sscanPrim fn [] False where
+  fn :: [Int] -> Event [Int] -> Maybe ([Int], Bool)
+  fn b (Event b') = trace (show (b, b')) $ Just (b', b == b')
+  fn _ _ = Nothing
 
 keysPlayingSF :: SF ([Int], Event MidiEvent) (Event [Int])
 keysPlayingSF = proc (keys, midi) -> do
@@ -71,13 +91,9 @@ virtualMidi :: SF (Event EventType) (Event EventType)
 virtualMidi = arr virtualMidi'
   where
     virtualMidi' :: Event EventType -> Event EventType
-    virtualMidi' e@(Event (UI (UIKeyDown c))) = case findNote c of 
-                                                  Just n -> Event $ Midi $ NoteOn n
-                                                  _ -> e
-    virtualMidi' e@(Event (UI (UIKeyUp c)))   = case findNote c of 
-                                                  Just n -> Event $ Midi $ NoteOff n
-                                                  _ -> e
-    virtualMidi' e = e     
+    virtualMidi' e@(Event (UI (UIKeyDown c))) = maybe e (Event . Midi . NoteOn) $ findNote c
+    virtualMidi' e@(Event (UI (UIKeyUp c)))   = maybe e (Event . Midi . NoteOff) $ findNote c
+    virtualMidi' e = e
     findNote c = c `elemIndex` keys
     keys = ['z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm',
             'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u']
@@ -112,44 +128,52 @@ pressKey = proc (event, keyboard) -> do
     Event keys -> keyboard { keysPlaying = keys }
     _ -> keyboard
 
-changeScale :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
-changeScale = proc input -> do
-  shouldSwitch <- decision -< input
-  output <- rSwitch passThrough -< (input, shouldSwitch)
-  returnA -< output
+changeScale :: SF (Event [Int], ScaleSelect) ScaleSelect
+changeScale = identity &&& detectParsingState >>> rSwitch (arr snd)
 
   where
-  passThrough :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
-  passThrough = arr $ \(_, ss, _) -> ss
+  detectParsingState :: SF (Event [Int], ScaleSelect) (Event (SF (Event [Int], ScaleSelect) ScaleSelect))
+  detectParsingState = proc (keys, ss) -> do
+    action <- detectAction -< (keys, actionKey ss)
 
-  decision :: SF (Keyboard, ScaleSelect, Event MidiEvent) (Event (SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect))
-  decision = proc (kbd, ss, midi) -> do
-    returnA -< case (ss, midi) of
-      (ScaleSelect { parsing = False, actionKey = ak }, Event (NoteOn n)) | n == ak
-       -> Event $ clearSS ss { parsing = True } -:> parse
-      (ScaleSelect { parsing = True, actionKey = ak }, Event (NoteOn n)) | n == ak
-       -> Event $ clearSS ss { parsing = False } -:> passThrough
-      (ScaleSelect { parsing = True, scale = Just _ }, _)
-       -> Event $ ss { parsing = False } -:> passThrough
+    returnA -< case (action, ss, keys) of
+      (Event _, ScaleSelect { parsing = False }, Event _)    -> Event $ startParsing ss
+      (Event _, ScaleSelect { parsing = True }, _)           -> Event $ cancelParsing ss
+      (_, ScaleSelect { parsing = True, scale = Just _ }, _) -> Event $ completeParsing ss
       _ -> NoEvent
+  
+  detectAction :: SF (Event [Int], Int) (Event ())
+  detectAction = proc (keys, ak) -> do
+    returnA -< case keys of
+      Event [n] | n == ak -> Event ()
+      _ -> NoEvent   
 
-  parse :: SF (Keyboard, ScaleSelect, Event MidiEvent) ScaleSelect
-  parse = proc (kbd, ss, midi) -> do
-    ssWithRoot <- parseRoot -< (kbd, ss)
-    ssWithChord <- parseChord -< (kbd, ssWithRoot)
-    ssWithScale <- parseScale -< (kbd, ssWithChord)
+  startParsing :: ScaleSelect -> SF (Event [Int], ScaleSelect) ScaleSelect
+  startParsing ss = clearSS ss { parsing = True } -:> first (hold []) >>> parse
+
+  cancelParsing :: ScaleSelect -> SF (Event [Int], ScaleSelect) ScaleSelect
+  cancelParsing ss = clearSS ss { parsing = False } -:> arr snd
+
+  completeParsing :: ScaleSelect -> SF (Event [Int], ScaleSelect) ScaleSelect
+  completeParsing ss = ss { parsing = False } -:> arr snd
+
+  parse :: SF ([Int], ScaleSelect) ScaleSelect
+  parse = proc (keys, ss) -> do
+    ssWithRoot <- parseRoot -< (keys, ss)
+    ssWithChord <- parseChord -< (keys, ssWithRoot)
+    ssWithScale <- parseScale -< (keys, ssWithChord)
     returnA -< ssWithScale
   
-  parseRoot :: SF (Keyboard, ScaleSelect) ScaleSelect
-  parseRoot = proc (kbd, ss) -> do
-    returnA -< case listToMaybe $ keysPlaying kbd of
+  parseRoot :: SF ([Int], ScaleSelect) ScaleSelect
+  parseRoot = proc (keys, ss) -> do
+    returnA -< case listToMaybe keys of
       Just r | r /= actionKey ss -> ss { root = Just $ toNote r }
       _ -> ss { root = Nothing }
 
-  parseChord :: SF (Keyboard, ScaleSelect) ScaleSelect
-  parseChord = proc (kbd, ss) -> do
+  parseChord :: SF ([Int], ScaleSelect) ScaleSelect
+  parseChord = proc (keys, ss) -> do
     let cs = case root ss of
-               Just r -> chordsForRoot r $ notesPlaying kbd
+               Just r -> chordsForRoot r $ map toNote keys
                _ -> []
     returnA -< ss { availChords = cs
                   , chord = case cs of
@@ -157,10 +181,10 @@ changeScale = proc input -> do
                               _ -> Nothing
                   }
 
-  parseScale :: SF (Keyboard, ScaleSelect) ScaleSelect
-  parseScale = proc (kbd, ss) -> do
+  parseScale :: SF ([Int], ScaleSelect) ScaleSelect
+  parseScale = proc (keys, ss) -> do
     let scs = let chordScales = nub [ s | c <- availChords ss, s <- map fst $ scalesForChord c ]
-              in  filter (\s -> (notesPlaying kbd) `containedIn` (scaleNotes s)) chordScales
+              in  filter (\s -> (map toNote keys) `containedIn` (scaleNotes s)) chordScales
     returnA -< ss { availScales = scs
                   , scale = case scs of
                               [sc] -> Just sc

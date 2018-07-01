@@ -23,6 +23,8 @@ data State = State { keyboard :: Keyboard
                    , midiSources :: [MidiSourceInfo]
                    , scaleSelect :: ScaleSelect
                    , colourAllowedNotes :: Bool
+                   , lastPlayedBlock :: [Int]
+                   , lastTwoBlocksSame :: Bool
                    } deriving (Eq, Show)
 
 initState keyboard = State { keyboard = keyboard
@@ -36,6 +38,8 @@ initState keyboard = State { keyboard = keyboard
                                                        , root = Just Eb --Nothing
                                                        , actionKey = firstKey keyboard
                                                        }
+                           , lastPlayedBlock = []
+                           , lastTwoBlocksSame = False
                            }
 
 clearSS :: ScaleSelect -> ScaleSelect
