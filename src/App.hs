@@ -3,7 +3,7 @@
 module App where
 
 import Control.Arrow ( returnA )
-import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge, DTime(..) )
+import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge, DTime(..), event )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub, deleteBy )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
@@ -165,7 +165,13 @@ changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
                   }
 
 lastNBlocksPlayedSameWithin :: Int -> DTime -> SF (Event [Int]) (Event ())
-lastNBlocksPlayedSameWithin n t = findLastPlayedBlock >>> compareLastNBlocksWithin n t >>> edge
+lastNBlocksPlayedSameWithin n t = findLastPlayedBlock
+                              >>> timed
+                              >>> lastN n
+                              >>> matches (\xs -> length xs == n
+                                               && allSame (map fst xs)
+                                               && sum (map snd $ init $ xs) < t)
+                              >>> edge
   where
   findLastPlayedBlock :: SF (Event [Int]) (Event [Int])
   findLastPlayedBlock = sscanPrim fn ([], [], True) NoEvent where
@@ -175,21 +181,21 @@ lastNBlocksPlayedSameWithin n t = findLastPlayedBlock >>> compareLastNBlocksWith
     fn (lastBlock, _, False) (Event []) = Just ((lastBlock, [], True), NoEvent)
     fn (lastBlock, ns, b) _ = Just ((lastBlock, ns, b), NoEvent)
 
-  compareLastNBlocks :: Int -> SF (Event [Int]) Bool
-  compareLastNBlocks n = sscanPrim fn (replicate (n - 1) []) False where
-    fn :: [[Int]] -> Event [Int] -> Maybe ([[Int]], Bool)
-    fn bs (Event b2) | all (== b2) bs = Just ((replicate (n - 1) []), True)
-    fn bs (Event b2) = Just (take (n - 1) (b2:bs), False)
-    fn bs _ = Just (bs, False)
+allSame :: Eq a => [a] -> Bool
+allSame (x:xs) = all (== x) xs
+allSame _ = True
 
-  compareLastNBlocksWithin :: Int -> DTime -> SF (Event [Int]) Bool
-  compareLastNBlocksWithin n totalTime = iterFrom fn ([], False) >>> arr snd where
-    fn :: Event [Int] -> Event [Int] -> DTime -> ([([Int], DTime)], Bool) -> ([([Int], DTime)], Bool)
-    fn _ (Event bs) t (xs, _) = let xs' = take (n - 1) xs
-                                in if length xs' == n - 1
-                                      && all ((== bs) . fst) xs'
-                                      && t + sum (map snd xs') < totalTime
-                                   then ([], True)
-                                   else ((bs, t):xs', False)
-    fn _ _ t1 (((bs, t0):xs), _) = ((bs, t0+t1):xs, False)
-    fn _ _ _ (xs, _) = (xs, False)
+timed :: SF (Event a) (Event (a, DTime))
+timed = iterFrom fn (0.0, NoEvent) >>> arr snd where
+  fn :: Event a -> Event a -> DTime -> (DTime, Event (a, DTime)) -> (DTime, Event (a, DTime))
+  fn _ (Event a) t' (t, _) = (t', Event (a, t))
+  fn _ _ t1 (t0, _) = (t0 + t1, NoEvent)
+
+lastN :: Int -> SF (Event a) (Event [a])
+lastN n = sscanPrim fn [] NoEvent where
+  fn :: [a] -> Event a -> Maybe ([a], Event [a])
+  fn as (Event a) = let as' = take n (a:as) in Just (as', Event as')
+  fn as _ = Just (as, NoEvent)
+
+matches :: ([a] -> Bool) -> SF (Event [a]) Bool
+matches predicate = arr $ event False predicate
