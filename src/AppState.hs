@@ -49,6 +49,7 @@ clearSS ss = ss { scale = Nothing
               , availChords = []
               }
 
+
 makeKeyboard :: Int -> Int -> Keyboard
 makeKeyboard start end = Keyboard start end []
 

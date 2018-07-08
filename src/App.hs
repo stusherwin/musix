@@ -3,7 +3,7 @@
 module App where
 
 import Control.Arrow ( returnA )
-import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge, DTime(..), event )
+import FRP.Yampa ( Event(..), SF, rMerge, reactInit, react, loopPre, constant, rSwitch, arr, (&&&), first, second, (>>>), identity, tag, drSwitch, kSwitch, dkSwitch, switch, dSwitch, (-->), (-:>), mapFilterE, maybeToEvent, mergeBy, iterFrom, hold, sscan, sscanPrim, edge, DTime(..), event, edgeBy )
 import Data.List ( elemIndex, intercalate, find, delete, sort, (\\), nub, deleteBy )
 import Data.Map.Lazy ( (!) )
 import Data.Maybe ( listToMaybe )
@@ -32,24 +32,23 @@ getMidiConnectionEvent _ = Nothing
 
 mainSF :: Midi -> SF (Event EventType, State) (Event (IO Bool), State)
 mainSF midi = proc input -> do
-  output <- first virtualMidi >>> loopPre NoEvent (mainSF' midi) -< input
+  output <- first virtualMidi >>> mainSF' midi -< input
   returnA -< output
   where 
 
-  mainSF' :: Midi -> SF ((Event EventType, State), Event [Int]) ((Event (IO Bool), State), Event [Int])
-  mainSF' midi = proc ((event, state), keys) -> do
+  mainSF' :: Midi -> SF (Event EventType, State) (Event (IO Bool), State)
+  mainSF' midi = proc (event, state) -> do
     let uiE = mapFilterE getUIEvent event
     let midiConnE = mapFilterE getMidiConnectionEvent event
     let midiE = mapFilterE getMidiEvent event
 
-    keys' <- (first $ hold []) >>> keysPlayingSF -< (keys, midiE) 
-    
     midiA <- midiAction -< midiConnE
     uiA <- uiAction -< uiE
 
+    keyboard' <- updateKeys -< (keyboard state, midiE)
+    keysE <- edgeBy (\a b -> if a /= b then Just b else Nothing) [] -< keysPlaying keyboard'
+    scaleSelect' <- changeScale -< (keysE, scaleSelect state)   
     midiSources' <- updateSources -< (midiConnE, midiSources state)
-    keyboard' <- pressKey -< (keys', keyboard state)
-    scaleSelect' <- changeScale -< (keys', scaleSelect state)
   
     let state' = state { keyboard = keyboard'
                        , scaleSelect = scaleSelect'
@@ -59,14 +58,14 @@ mainSF midi = proc input -> do
     let uiIO = handleUIAction state' <$> uiA
     let midiIO = handleMidiAction midi <$> midiA
   
-    returnA -< ((mergeBy (>>) midiIO uiIO, state'), keys')
+    returnA -< (mergeBy (>>) midiIO uiIO, state')
 
-keysPlayingSF :: SF ([Int], Event MidiEvent) (Event [Int])
-keysPlayingSF = proc (keys, midi) -> do
+updateKeys :: SF (Keyboard, Event MidiEvent) Keyboard
+updateKeys = proc (keyboard, midi) -> do
   returnA -< case midi of
-               Event (NoteOn k) | not (k `elem` keys) -> Event $ sort $ k : keys
-               Event (NoteOff k) -> Event $ delete k keys
-               _ -> NoEvent
+               Event (NoteOn k) -> keyDown k keyboard
+               Event (NoteOff k) -> keyUp k keyboard
+               _ -> keyboard
 
 virtualMidi :: SF (Event EventType) (Event EventType)
 virtualMidi = arr virtualMidi'
@@ -92,7 +91,6 @@ updateSources = proc (e, sis) -> do
   toSrcInfo :: MidiSource -> MidiSourceInfo
   toSrcInfo src = MidiSourceInfo (srcIndex src) (srcName src) False
 
-
 uiAction :: SF (Event UIEvent) (Event UIAction)
 uiAction = proc e -> do
   returnA -< case e of
@@ -106,12 +104,6 @@ midiAction = proc e -> do
   returnA -< case e of
     Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ srcIndex s
     _ -> NoEvent
-
-pressKey :: SF (Event [Int], Keyboard) Keyboard
-pressKey = proc (event, keyboard) -> do
-  returnA -< case event of
-    Event keys -> keyboard { keysPlaying = keys }
-    _ -> keyboard
 
 changeScale :: SF (Event [Int], ScaleSelect) ScaleSelect
 changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
