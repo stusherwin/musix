@@ -113,7 +113,7 @@ changeScale :: SF (Event [Int], ScaleSelect) ScaleSelect
 changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
   detectParsingState :: SF (Event [Int], ScaleSelect) (Event (SF (Event [Int], ScaleSelect) ScaleSelect))
   detectParsingState = proc (keys, ss) -> do
-    parseTrigger <- lastNBlocksPlayedSameWithin 3 0.5 -< keys
+    parseTrigger <- detectParseTrigger -< keys
 
     returnA -< case (parseTrigger, ss, keys) of
       (Event _, ScaleSelect { parsing = False }, Event _)    -> Event $ startParsing ss
@@ -129,6 +129,15 @@ changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
 
   completeParsing :: ScaleSelect -> SF (Event [Int], ScaleSelect) ScaleSelect
   completeParsing ss = ss { parsing = False } -:> arr snd
+
+  detectParseTrigger :: SF (Event [Int]) (Event ())
+  detectParseTrigger = lastPlayedBlock
+                   >>> timed
+                   >>> lastN 3
+                   >>> matches (\xs -> length xs == 3
+                                    && allSame (map fst xs)
+                                    && sum (map snd $ init $ xs) < 0.5)
+                   >>> edge
 
   parse :: SF ([Int], ScaleSelect) ScaleSelect
   parse = proc (keys, ss) -> do
@@ -164,22 +173,13 @@ changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
                               _ -> Nothing
                   }
 
-lastNBlocksPlayedSameWithin :: Int -> DTime -> SF (Event [Int]) (Event ())
-lastNBlocksPlayedSameWithin n t = findLastPlayedBlock
-                              >>> timed
-                              >>> lastN n
-                              >>> matches (\xs -> length xs == n
-                                               && allSame (map fst xs)
-                                               && sum (map snd $ init $ xs) < t)
-                              >>> edge
-  where
-  findLastPlayedBlock :: SF (Event [Int]) (Event [Int])
-  findLastPlayedBlock = sscanPrim fn ([], [], True) NoEvent where
-    fn :: ([Int], [Int], Bool) -> Event [Int] -> Maybe (([Int], [Int], Bool), Event [Int])
-    fn (lastBlock, ns, True) (Event ns') | length ns' > length ns = Just ((lastBlock, ns', True), NoEvent)
-    fn (_, ns, True) (Event ns') | length ns' < length ns = Just ((ns, ns', False), Event ns)
-    fn (lastBlock, _, False) (Event []) = Just ((lastBlock, [], True), NoEvent)
-    fn (lastBlock, ns, b) _ = Just ((lastBlock, ns, b), NoEvent)
+lastPlayedBlock :: SF (Event [Int]) (Event [Int])
+lastPlayedBlock = sscanPrim fn ([], [], True) NoEvent where
+  fn :: ([Int], [Int], Bool) -> Event [Int] -> Maybe (([Int], [Int], Bool), Event [Int])
+  fn (lastBlock, ns, True) (Event ns') | length ns' > length ns = Just ((lastBlock, ns', True), NoEvent)
+  fn (_, ns, True) (Event ns') | length ns' < length ns = Just ((ns, ns', False), Event ns)
+  fn (lastBlock, _, False) (Event []) = Just ((lastBlock, [], True), NoEvent)
+  fn (lastBlock, ns, b) _ = Just ((lastBlock, ns, b), NoEvent)
 
 allSame :: Eq a => [a] -> Bool
 allSame (x:xs) = all (== x) xs
@@ -188,7 +188,7 @@ allSame _ = True
 timed :: SF (Event a) (Event (a, DTime))
 timed = iterFrom fn (0.0, NoEvent) >>> arr snd where
   fn :: Event a -> Event a -> DTime -> (DTime, Event (a, DTime)) -> (DTime, Event (a, DTime))
-  fn _ (Event a) t' (t, _) = (t', Event (a, t))
+  fn _ (Event a) t1 (t0, _) = (t1, Event (a, t0))
   fn _ _ t1 (t0, _) = (t0 + t1, NoEvent)
 
 lastN :: Int -> SF (Event a) (Event [a])
