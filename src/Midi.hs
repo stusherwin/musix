@@ -2,7 +2,7 @@ module Midi (
   MidiEvent(..),
   MidiConnectionEvent(..),
   MidiAction(..),
-  MidiSourceInfo(..),
+  MidiSource(..),
   Midi,
   setupMidi,
   startListening,
@@ -24,7 +24,7 @@ data MidiEvent = NoteOn Int
 data MidiAction = Connect Int
                 | Disconnect Int deriving (Show)
 
-data MidiConnectionEvent = MidiConnectionsChanged [MidiSourceInfo]
+data MidiConnectionEvent = MidiConnectionsChanged [MidiSource]
                          | MidiConnected Int deriving (Show)
 
 data MidiConnection = MidiConnection { conn :: Connection
@@ -32,30 +32,24 @@ data MidiConnection = MidiConnection { conn :: Connection
                                      , justConnected :: Bool
                                      }
 
-data MidiSourceInfo = MidiSourceInfo { index :: Int
-                                     , name :: String
-                                     , model :: String
-                                     , manufacturer :: String
-                                     , connected :: Bool
-                                     } deriving (Eq, Show)
-
 data MidiSource = MidiSource { srcIndex :: Int
                              , srcName :: String
                              , srcModel :: String
                              , srcManufacturer :: String
                              , srcSource :: Source
-                             }
+                             } deriving (Eq, Show)
 
-data Midi = Midi { sources :: [MidiSource]
+data Midi = Midi { sources :: IORef [MidiSource]
                  , connection :: IORef (Maybe MidiConnection)
                  , handler :: IORef (Maybe (M.MidiEvent -> IO ()))
                  }
 
 setupMidi :: IO Midi
 setupMidi = do
+  sources <- newIORef []
   connection <- newIORef (Nothing :: Maybe MidiConnection)
   handler <- newIORef (Nothing :: Maybe (M.MidiEvent -> IO ()))
-  return Midi { sources = []
+  return Midi { sources = sources
               , connection = connection
               , handler = handler
               }
@@ -63,9 +57,7 @@ setupMidi = do
 startListening :: Midi -> (MidiConnectionEvent -> IO()) -> (MidiEvent -> IO ()) -> IO ()
 startListening midi connHandler eventHandler = do
   writeIORef (handler midi) (Just $ makeHandler eventHandler)
-  srcCountRef <- newIORef (0 :: Int)
-  let connRef = connection midi
-  _ <- forkIO $ loop srcCountRef connRef
+  _ <- forkIO $ loop
   return ()
   where
   makeHandler :: (MidiEvent -> IO ()) -> (M.MidiEvent -> IO ())
@@ -73,26 +65,22 @@ startListening midi connHandler eventHandler = do
   makeHandler handler (M.MidiEvent _ (MidiMessage _ (M.NoteOff n _))) = handler (NoteOff n)
   makeHandler _ _ = return ()
   
-  loop :: IORef Int -> IORef (Maybe MidiConnection) -> IO ()
-  loop srcCountRef connRef = do
+  loop :: IO ()
+  loop = do
     threadDelay 1000
-    maybeC <- readIORef connRef
+    srcs <- readIORef $ sources midi
+    srcs' <- getSources
+    when (length srcs /= length srcs') $ do
+      writeIORef (sources midi) srcs'
+      connHandler $ MidiConnectionsChanged srcs'
+    maybeC <- readIORef $ connection midi
     case maybeC of
       Just c@MidiConnection { justConnected = True } -> do
-        writeIORef connRef $ Just c { justConnected = False }
+        writeIORef (connection midi) $ Just c { justConnected = False }
         connHandler $ MidiConnected (srcIndex . source $ c)
-        loop srcCountRef connRef
-      _ -> do
-        srcCount <- readIORef srcCountRef
-        srcs <- getSources
-        when (srcCount /= length srcs) $ do
-          writeIORef srcCountRef (length srcs)
-          connHandler $ MidiConnectionsChanged $ map toSrcInfo srcs
-        loop srcCountRef connRef
+      _ -> return ()
+    loop
   
-  toSrcInfo :: MidiSource -> MidiSourceInfo
-  toSrcInfo src = MidiSourceInfo (srcIndex src) (srcName src) (srcModel src) (srcManufacturer src) False
-
 closeMidi :: Midi -> IO ()
 closeMidi = closeExistingConnection
 
@@ -107,7 +95,8 @@ getSources = do
 
 handleMidiAction :: Midi -> MidiAction -> IO Bool
 handleMidiAction midi (Connect i) = do
-  let maybeSrc = find ((== i) . srcIndex) (sources midi)
+  srcs <- readIORef $ sources midi
+  let maybeSrc = find ((== i) . srcIndex) srcs
   case maybeSrc of
     Just src -> do
       closeExistingConnection midi

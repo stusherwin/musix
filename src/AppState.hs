@@ -18,6 +18,11 @@ data ScaleSelect = ScaleSelect { scale :: Maybe Scale
                                , root :: Maybe Note
                                } deriving (Eq, Show)
 
+data MidiSourceInfo = MidiSourceInfo { index :: Int
+                                     , name :: String
+                                     , connected :: Bool
+                                     } deriving (Eq, Show)
+
 data State = State { keyboard :: Keyboard
                    , midiSources :: [MidiSourceInfo]
                    , scaleSelect :: ScaleSelect

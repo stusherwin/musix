@@ -82,12 +82,16 @@ virtualMidi = arr virtualMidi'
 updateSources :: SF (Event MidiConnectionEvent, [MidiSourceInfo]) [MidiSourceInfo]
 updateSources = proc (e, sis) -> do
   returnA -< case e of
-    Event (MidiConnectionsChanged srcs) -> srcs
+    Event (MidiConnectionsChanged srcs) -> map toSrcInfo srcs
     Event (MidiConnected i) -> let maybeSi = find (\s -> index s == i) sis
                                in  case maybeSi of
                                      Just si -> si { connected = True } : (deleteBy (\a b -> index a == index b) si sis)
                                      _ -> sis
     _ -> sis
+  where
+  toSrcInfo :: MidiSource -> MidiSourceInfo
+  toSrcInfo src = MidiSourceInfo (srcIndex src) (srcName src) False
+
 
 uiAction :: SF (Event UIEvent) (Event UIAction)
 uiAction = proc e -> do
@@ -100,7 +104,7 @@ uiAction = proc e -> do
 midiAction :: SF (Event MidiConnectionEvent) (Event MidiAction)
 midiAction = proc e -> do
   returnA -< case e of
-    Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ Midi.index s
+    Event (MidiConnectionsChanged (s:srcs)) -> Event $ Connect $ srcIndex s
     _ -> NoEvent
 
 pressKey :: SF (Event [Int], Keyboard) Keyboard
@@ -136,7 +140,7 @@ changeScale = identity &&& detectParsingState >>> rSwitch (arr snd) where
                    >>> lastN 3
                    >>> matches (\xs -> length xs == 3
                                     && allSame (map fst xs)
-                                    && sum (map snd $ init $ xs) < 0.5)
+                                    && sum (map snd $ init $ xs) < 1.0)
                    >>> edge
 
   parse :: SF ([Int], ScaleSelect) ScaleSelect
