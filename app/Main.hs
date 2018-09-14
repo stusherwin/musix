@@ -1,9 +1,10 @@
 import Data.Time.Clock.POSIX ( POSIXTime, getPOSIXTime )
 import Data.IORef ( IORef, newIORef, writeIORef, readIORef )
-import FRP.Yampa ( Event(..), SF, reactInit, react, loopPre )
+import FRP.Yampa ( Event(..), SF, reactInit, react, loopPre, arr, afterEach, time, (>>>), (<<<), reactimate )
 import Control.Concurrent ( threadDelay, forkIO, yield )
 import Control.Monad ( when )
 import Debug.Trace ( trace )
+import Data.Time.Clock ( UTCTime, getCurrentTime, diffUTCTime ) 
 
 import Config
 import Music
@@ -11,6 +12,30 @@ import Midi
 import UI
 import App
 import AppState
+
+twoSecondsPassed :: SF () Bool
+twoSecondsPassed = time >>> arr (> 2) --(\t -> (trace (show t) t > 2.0))
+ 
+main' :: IO ()
+main' = do
+  t <- getCurrentTime
+  timeRef <- newIORef t
+  reactimate initialize (sense timeRef) actuate ((afterEach $ cycle [(0.9, "down"), (0.1, "up")]) <<< twoSecondsPassed)
+ 
+initialize :: IO ()
+initialize = putStrLn "Hello... wait for it..."
+ 
+actuate :: Bool -> Event String -> IO Bool
+actuate _ (Event x) = (putStrLn x) >> return False
+actuate _ _ = return False
+ 
+sense :: IORef UTCTime -> Bool -> IO (Double, Maybe ())
+sense timeRef _ = do
+  now      <- getCurrentTime
+  lastTime <- readIORef timeRef
+  writeIORef timeRef now --(trace (show now) now)
+  let dt = now `diffUTCTime` lastTime
+  return (realToFrac dt, Just ())
 
 main :: IO ()
 main = do
